@@ -27,3 +27,10 @@ require_once APP_ROOT . '/src/OrderService.php';
 require_once APP_ROOT . '/src/Bot.php';
 
 DB::init($GLOBALS['config']);
+
+// Tự nâng cấp CSDL khi có phiên bản mới
+const DB_VERSION = '2';
+if (Settings::get('db_version') !== DB_VERSION) {
+    DB::migrate();
+    Settings::set('db_version', DB_VERSION);
+}

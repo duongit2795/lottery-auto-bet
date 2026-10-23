@@ -27,7 +27,10 @@ final class Settings
             'min_price' => '0',
 
             // Đơn hàng
-            'order_timeout' => '600',      // giây chờ OTP trước khi tự hủy + hoàn tiền
+            'order_timeout' => '900',      // giây chờ OTP trước khi tự hủy + hoàn tiền
+            'allow_user_cancel' => '0',    // cho khách tự hủy khi nhà cung cấp không có API hủy
+            'allow_network_select' => '1', // cho khách chọn nhà mạng khi thuê
+            'allow_re_number' => '1',      // cho khách thuê lại số cũ
             'max_pending_orders' => '3',
             'allow_cancel_after' => '0',   // giây tối thiểu trước khi cho phép hủy
             'services_per_page' => '10',
@@ -45,30 +48,36 @@ final class Settings
             // Giới thiệu
             'referral_percent' => '5',
 
-            // Nhà cung cấp OTP (BossOTP)
-            'api_base_url' => 'https://bossotp.net/api',
-            'api_key' => '',
-            'api_key_param' => 'api_key',  // tên tham số chứa API key
-            'api_auth_mode' => 'query',    // query | bearer | header
-            'api_ep_balance' => 'GET /user/balance',
-            'api_ep_services' => 'GET /services',
-            'api_ep_rent' => 'GET /rent?service_id={service_id}',
-            'api_ep_check' => 'GET /rent/check?id={order_id}',
-            'api_ep_cancel' => 'GET /rent/cancel?id={order_id}',
+            // Nhà cung cấp OTP (BossOTP API v4 — https://bossotp.net/rent-api)
+            'api_base_url' => 'https://bossotp.net',
+            'api_key' => 'sk_ycOg6WspBrNPjDtzVkbkwVELmRMHGuMG', // TODO: thay key mới trong trang admin
+            'api_key_param' => 'api_token', // tên tham số chứa API key
+            'api_auth_mode' => 'query',     // query | bearer | header
+            'api_language' => 'vn',         // ngôn ngữ cuộc gọi cho dịch vụ trả OTP bằng cuộc gọi: vn | en
+            'api_ep_balance' => 'GET /api/v4/users/me/balance',
+            'api_ep_services' => 'GET /api/v4/service-manager/services',
+            'api_ep_rent' => 'GET /api/v4/rents/create?service_id={service_id}',
+            'api_ep_check' => 'GET /api/v4/rents/check?_id={order_id}',
+            'api_ep_send_sms' => 'GET /api/v4/rents/send-sms?_id={order_id}',
+            'api_ep_cancel' => '',          // BossOTP không có API hủy — để trống
             // ánh xạ trường trong JSON trả về (nhiều lựa chọn cách nhau bởi "|")
-            'api_map_success' => 'success|status|ok',
-            'api_map_message' => 'message|msg|error',
-            'api_map_balance' => 'data.balance|balance|data.money|money',
-            'api_map_services_list' => 'data|services|data.services|result',
-            'api_map_service_id' => 'id|service_id|serviceId|code',
-            'api_map_service_name' => 'name|service_name|serviceName|title',
-            'api_map_service_price' => 'price|cost|amount|rate',
-            'api_map_order_id' => 'data.id|data.order_id|data.request_id|id|order_id|request_id',
-            'api_map_phone' => 'data.phone|data.number|data.phone_number|phone|number|phone_number',
-            'api_map_otp' => 'data.otp|data.code|otp|code|data.sms_code',
-            'api_map_sms' => 'data.sms|data.content|data.message|sms|content',
-            'api_map_status' => 'data.status|status_text|state',
-            'api_status_expired' => 'expired|timeout|cancel|cancelled|canceled|refund|2|-1',
+            'api_map_success' => '',        // để trống = dựa vào HTTP code (BossOTP trả 400 khi lỗi)
+            'api_map_message' => 'code|error|message',
+            'api_map_balance' => 'balance',
+            'api_map_services_list' => '',  // để trống = JSON trả về là mảng
+            'api_map_service_id' => '_id|id',
+            'api_map_service_name' => 'name',
+            'api_map_service_price' => 'price',
+            'api_map_order_id' => 'rent_id',
+            'api_map_phone' => 'number',
+            'api_map_otp' => 'otp',
+            'api_map_sms' => 'sms_content',
+            'api_map_status' => 'status',
+            'api_map_cost' => 'price',
+            'api_map_call_logs' => 'call_logs',
+            'api_status_success' => 'success',
+            'api_status_expired' => 'failed|expired|cancelled',
+            'api_phone_add_zero' => '1',    // BossOTP trả số không có số 0 đầu
         ];
     }
 

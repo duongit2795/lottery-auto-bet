@@ -21,10 +21,13 @@ $groups = [
         ['min_price', 'Giá bán tối thiểu', 'number', ''],
     ],
     '📱 Đơn thuê sim' => [
-        ['order_timeout', 'Thời gian chờ OTP (giây)', 'number', 'Hết thời gian chưa có OTP → tự hủy & hoàn tiền'],
+        ['order_timeout', 'Thời gian chờ OTP (giây)', 'number', 'Hết thời gian chưa có OTP → hoàn tiền. Nên đặt ≥ thời gian thuê của BossOTP để tránh hoàn tiền rồi OTP mới về'],
         ['max_pending_orders', 'Số đơn chờ tối đa / user', 'number', '0 = không giới hạn'],
         ['allow_cancel_after', 'Cho phép hủy sau (giây)', 'number', 'Chống thuê/hủy liên tục. 0 = hủy ngay được'],
         ['services_per_page', 'Số dịch vụ mỗi trang trong bot', 'number', ''],
+        ['allow_network_select', 'Cho khách chọn nhà mạng', 'bool', 'Viettel, Mobifone, Vinaphone, Vietnamobile, Gmobile'],
+        ['allow_re_number', 'Cho khách thuê lại số cũ', 'bool', 'Nút "Thuê lại số này" trên đơn đã thành công'],
+        ['allow_user_cancel', 'Cho khách tự hủy đơn', 'bool', 'BossOTP không có API hủy: nếu bật, khách hủy sẽ được hoàn tiền nhưng shop vẫn có thể bị tính phí nếu OTP về sau đó'],
     ],
     '💰 Nạp tiền' => [
         ['bank_name', 'Tên ngân hàng', 'text', 'vd: MB Bank'],

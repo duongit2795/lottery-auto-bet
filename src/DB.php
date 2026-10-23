@@ -140,6 +140,7 @@ final class DB
                 custom_price TINYINT NOT NULL DEFAULT 0,
                 is_active TINYINT NOT NULL DEFAULT 1,
                 sort_order INT NOT NULL DEFAULT 0,
+                sms_mode VARCHAR(10) NOT NULL DEFAULT 'none',
                 updated_at DATETIME
             )$tail",
             "CREATE TABLE IF NOT EXISTS orders (
@@ -154,6 +155,10 @@ final class DB
                 price DECIMAL(15,0) NOT NULL DEFAULT 0,
                 cost DECIMAL(15,0) NOT NULL DEFAULT 0,
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                network VARCHAR(20),
+                sms_sent TINYINT NOT NULL DEFAULT 0,
+                sms_info VARCHAR(255),
+                call_logs $text,
                 tg_message_id BIGINT,
                 expires_at DATETIME,
                 created_at DATETIME,
@@ -196,7 +201,15 @@ final class DB
             'CREATE INDEX idx_tx_user ON transactions(user_id)',
             'CREATE INDEX idx_dep_user ON deposits(user_id)',
         ];
-        foreach ($idx as $sql) {
+        // Nâng cấp CSDL cũ: thêm cột mới nếu chưa có
+        $columns = [
+            "ALTER TABLE services ADD COLUMN sms_mode VARCHAR(10) NOT NULL DEFAULT 'none'",
+            'ALTER TABLE orders ADD COLUMN network VARCHAR(20)',
+            'ALTER TABLE orders ADD COLUMN sms_sent TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE orders ADD COLUMN sms_info VARCHAR(255)',
+            "ALTER TABLE orders ADD COLUMN call_logs $text",
+        ];
+        foreach (array_merge($columns, $idx) as $sql) {
             try {
                 self::$pdo->exec($sql);
             } catch (PDOException $e) {

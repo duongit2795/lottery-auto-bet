@@ -54,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'custom_price' => $price != (float)$row['price'] || $row['custom_price'] ? 1 : 0,
                 'is_active' => isset($s['active']) ? 1 : 0,
                 'sort_order' => (int)$s['sort'],
+                'sms_mode' => array_key_exists($s['sms_mode'] ?? '', OrderService::SMS_MODES) ? $s['sms_mode'] : 'none',
             ], 'id = ?', [(int)$id]);
         }
         flash('Đã lưu.');
@@ -114,14 +115,14 @@ layout_start('Dịch vụ & giá bán');
         </form>
         <form class="ms-auto d-flex gap-1"><input name="q" value="<?= h($q) ?>" class="form-control form-control-sm" placeholder="Tìm dịch vụ"><button class="btn btn-sm btn-secondary">Tìm</button></form>
     </div>
-    <div class="form-text">Giá đã sửa tay (<span class="badge text-bg-info">tay</span>) sẽ không bị ghi đè khi đồng bộ/tính lại.</div>
+    <div class="form-text">Cột <b>Gửi SMS</b>: bật cho các dịch vụ BossOTP hỗ trợ gửi SMS (cố định / tùy chọn) hoặc chuyển tiếp cuộc gọi — khách sẽ thấy nút tương ứng trên đơn.<br>Giá đã sửa tay (<span class="badge text-bg-info">tay</span>) sẽ không bị ghi đè khi đồng bộ/tính lại.</div>
 </div>
 
 <form method="post">
     <?= csrf_field() ?>
     <div class="card card-body mb-3"><div class="table-responsive">
     <table class="table table-sm table-hover">
-        <tr><th>Bật</th><th>ID API</th><th>Tên hiển thị</th><th>Giá gốc</th><th>Giá bán</th><th>Lãi</th><th>Ưu tiên</th><th>Đã bán</th><th></th></tr>
+        <tr><th>Bật</th><th>ID API</th><th>Tên hiển thị</th><th>Giá gốc</th><th>Giá bán</th><th>Lãi</th><th>Ưu tiên</th><th title="Dịch vụ hỗ trợ gửi SMS / chuyển tiếp cuộc gọi">Gửi SMS</th><th>Đã bán</th><th></th></tr>
         <?php foreach ($rows as $s): $sold = (int)DB::value("SELECT COUNT(*) FROM orders WHERE service_id = ? AND status = 'success'", [$s['id']]); ?>
             <tr>
                 <td><input type="checkbox" class="form-check-input" name="svc[<?= $s['id'] ?>][active]" <?= $s['is_active'] ? 'checked' : '' ?>></td>
@@ -131,6 +132,9 @@ layout_start('Dịch vụ & giá bán');
                 <td style="width:140px"><div class="input-group input-group-sm"><input name="svc[<?= $s['id'] ?>][price]" value="<?= (int)$s['price'] ?>" class="form-control"><?php if ($s['custom_price']): ?><span class="input-group-text"><span class="badge text-bg-info">tay</span></span><?php endif; ?></div></td>
                 <td class="<?= $s['price'] - $s['cost'] < 0 ? 'text-danger' : 'text-success' ?>"><?= money($s['price'] - $s['cost']) ?></td>
                 <td style="width:80px"><input name="svc[<?= $s['id'] ?>][sort]" value="<?= (int)$s['sort_order'] ?>" class="form-control form-control-sm"></td>
+                <td><select name="svc[<?= $s['id'] ?>][sms_mode]" class="form-select form-select-sm" style="min-width:150px">
+                    <?php foreach (OrderService::SMS_MODES as $k => $l): ?><option value="<?= $k ?>" <?= $s['sms_mode'] === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
+                </select></td>
                 <td><?= $sold ?></td>
                 <td class="text-nowrap">
                     <?php if ($s['custom_price']): ?><button form="f-auto" name="id" value="<?= $s['id'] ?>" class="btn btn-sm btn-link p-0">Giá tự động</button><?php endif; ?>
@@ -138,7 +142,7 @@ layout_start('Dịch vụ & giá bán');
                 </td>
             </tr>
         <?php endforeach; ?>
-        <?php if (!$rows): ?><tr><td colspan="9" class="text-muted">Chưa có dịch vụ. Bấm "Đồng bộ từ API" hoặc thêm thủ công bên dưới.</td></tr><?php endif; ?>
+        <?php if (!$rows): ?><tr><td colspan="10" class="text-muted">Chưa có dịch vụ. Bấm "Đồng bộ từ API" hoặc thêm thủ công bên dưới.</td></tr><?php endif; ?>
     </table>
     </div>
     <?= paginate($total, $per, $page, ['q' => $q]) ?>

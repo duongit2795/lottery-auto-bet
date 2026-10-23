@@ -3,6 +3,14 @@ declare(strict_types=1);
 
 final class OrderService
 {
+    /** Kiểu gửi SMS của dịch vụ (theo API send-sms của BossOTP). */
+    public const SMS_MODES = [
+        'none' => 'Không',
+        'fixed' => 'Gửi SMS cố định',
+        'custom' => 'Gửi SMS tùy chọn',
+        'forward' => 'Chuyển tiếp cuộc gọi',
+    ];
+
     private OtpProvider $api;
     private Telegram $tg;
 
@@ -12,22 +20,30 @@ final class OrderService
         $this->tg = new Telegram();
     }
 
-    /** Tạo đơn thuê sim. Trả về ['ok'=>bool,'message'=>string,'order'=>?array]. */
-    public function create(array $user, array $service): array
+    /**
+     * Tạo đơn thuê sim. $opts: network, re_number.
+     * Trả về ['ok'=>bool,'message'=>string,'order'=>?array].
+     */
+    public function create(array $user, array $service, array $opts = []): array
     {
         $pending = (int)DB::value("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'pending'", [$user['id']]);
         $max = Settings::int('max_pending_orders');
         if ($max > 0 && $pending >= $max) {
-            return ['ok' => false, 'message' => "Bạn đang có $pending số chờ OTP. Vui lòng đợi hoặc hủy bớt (tối đa $max)."];
+            return ['ok' => false, 'message' => "Bạn đang có $pending số chờ OTP. Vui lòng đợi đơn cũ kết thúc (tối đa $max)."];
         }
         $price = (float)$service['price'];
         if (Wallet::change((int)$user['id'], -$price, 'order', 'Thuê sim ' . $service['name']) === null) {
             return ['ok' => false, 'message' => 'Số dư không đủ. Cần ' . money($price) . ', hiện có ' . money($user['balance']) . '.'];
         }
 
-        $res = $this->api->rent((string)$service['provider_id']);
+        $res = $this->api->rent((string)$service['provider_id'], $opts);
         if (!$res['ok']) {
             Wallet::change((int)$user['id'], $price, 'refund', 'Hoàn tiền: thuê sim lỗi');
+            if ($res['code'] === 'NOT_ENOUGH_BALANCE') {
+                foreach (Settings::adminIds() as $admin) {
+                    $this->tg->send($admin, '⚠️ Tài khoản BossOTP <b>hết số dư</b>, khách không thuê được số. Vui lòng nạp thêm!');
+                }
+            }
             return ['ok' => false, 'message' => '❌ ' . $res['message'] . "\nĐã hoàn " . money($price) . ' vào tài khoản.'];
         }
 
@@ -40,6 +56,7 @@ final class OrderService
             'price' => $price,
             'cost' => $service['cost'],
             'status' => 'pending',
+            'network' => $opts['network'] ?? null,
             'expires_at' => date('Y-m-d H:i:s', time() + Settings::int('order_timeout')),
             'created_at' => now(),
             'updated_at' => now(),
@@ -52,6 +69,7 @@ final class OrderService
         $icons = ['pending' => '⏳ Đang chờ OTP', 'success' => '✅ Thành công', 'refunded' => '↩️ Đã hoàn tiền', 'cancelled' => '❌ Đã hủy'];
         $t = "📱 <b>Đơn #{$o['id']}</b> — " . tg_escape($o['service_name']) . "\n"
             . "Số điện thoại: <code>" . tg_escape($o['phone']) . "</code>\n"
+            . ($o['network'] ? 'Nhà mạng: ' . tg_escape($o['network']) . "\n" : '')
             . "Giá: <b>" . money($o['price']) . "</b>\n"
             . "Trạng thái: " . ($icons[$o['status']] ?? $o['status']) . "\n";
         if ($o['otp']) {
@@ -60,6 +78,17 @@ final class OrderService
         if ($o['sms']) {
             $t .= "💬 SMS: " . tg_escape(mb_substr($o['sms'], 0, 500)) . "\n";
         }
+        $calls = $o['call_logs'] ? (json_decode($o['call_logs'], true) ?: []) : [];
+        if ($calls) {
+            $t .= "\n📞 <b>Cuộc gọi đến:</b>\n";
+            foreach (array_slice($calls, 0, 10) as $c) {
+                $time = isset($c['time']) ? date('H:i:s d/m', strtotime((string)$c['time'])) : '';
+                $t .= '• ' . tg_escape($c['number'] ?? '?') . ' — ' . (int)($c['duration'] ?? 0) . "s ($time)\n";
+            }
+        }
+        if ($o['sms_info']) {
+            $t .= '📤 ' . tg_escape($o['sms_info']) . "\n";
+        }
         if ($o['status'] === 'pending') {
             $left = max(0, strtotime($o['expires_at']) - time());
             $t .= "\n⏱ Còn lại: " . floor($left / 60) . " phút " . ($left % 60) . " giây\n<i>OTP sẽ tự động gửi về khi có.</i>";
@@ -67,22 +96,41 @@ final class OrderService
         return $t;
     }
 
+    public static function userCanCancel(): bool
+    {
+        return (new OtpProvider())->canCancel() || Settings::get('allow_user_cancel') === '1';
+    }
+
     public static function orderKeyboard(array $o): ?array
     {
         if ($o['status'] === 'pending') {
-            return Telegram::inline([[
-                Telegram::btn('🔄 Kiểm tra OTP', 'chk:' . $o['id']),
-                Telegram::btn('❌ Hủy & hoàn tiền', 'cxl:' . $o['id']),
-            ]]);
+            $rows = [];
+            $mode = (string)DB::value('SELECT sms_mode FROM services WHERE id = ?', [$o['service_id']]);
+            if (!$o['sms_sent'] && $mode !== '' && $mode !== 'none') {
+                $labels = ['fixed' => ['📤 Yêu cầu gửi SMS', 'smsf'], 'custom' => ['✉️ Gửi tin nhắn từ số này', 'smsc'], 'forward' => ['📞 Chuyển tiếp cuộc gọi', 'fwd']];
+                if (isset($labels[$mode])) {
+                    $rows[] = [Telegram::btn($labels[$mode][0], $labels[$mode][1] . ':' . $o['id'])];
+                }
+            }
+            $row = [Telegram::btn('🔄 Kiểm tra OTP', 'chk:' . $o['id'])];
+            if (self::userCanCancel()) {
+                $row[] = Telegram::btn('❌ Hủy & hoàn tiền', 'cxl:' . $o['id']);
+            }
+            $rows[] = $row;
+            return Telegram::inline($rows);
         }
         if ($o['status'] === 'success') {
-            return Telegram::inline([[Telegram::btn('🔁 Thuê lại dịch vụ này', 'buy:' . $o['service_id'])]]);
+            $row = [Telegram::btn('🔁 Thuê lại dịch vụ', 'buy:' . $o['service_id'])];
+            if (Settings::get('allow_re_number') === '1') {
+                $row[] = Telegram::btn('♻️ Thuê lại số này', 're:' . $o['id']);
+            }
+            return Telegram::inline([$row]);
         }
         return null;
     }
 
     /** Cập nhật tin nhắn đơn hàng trên Telegram. */
-    public function notify(array $o, bool $newMessage = false): void
+    public function notify(array $o): void
     {
         $tgId = DB::value('SELECT tg_id FROM users WHERE id = ?', [$o['user_id']]);
         if (!$tgId) {
@@ -90,10 +138,9 @@ final class OrderService
         }
         $text = self::orderText($o);
         $kb = self::orderKeyboard($o) ?? Telegram::inline([]);
-        if ($o['tg_message_id'] && !$newMessage) {
+        if ($o['tg_message_id']) {
             $this->tg->edit($tgId, $o['tg_message_id'], $text, $kb);
-        }
-        if ($newMessage || !$o['tg_message_id']) {
+        } else {
             $this->tg->send($tgId, $text, $kb);
         }
     }
@@ -105,18 +152,29 @@ final class OrderService
             return $o;
         }
         $r = $this->api->check((string)$o['provider_order_id']);
-        if ($r['ok'] && $r['otp'] !== null) {
-            $this->markSuccess($o, $r['otp'], $r['sms']);
+        $callsJson = $r['call_logs'] ? json_encode($r['call_logs'], JSON_UNESCAPED_UNICODE) : null;
+        if ($callsJson !== null && $callsJson !== $o['call_logs']) {
+            DB::update('orders', ['call_logs' => $callsJson, 'updated_at' => now()], 'id = ?', [$o['id']]);
+            $o['call_logs'] = $callsJson;
+            if (!$r['otp'] && !$r['success']) {
+                $this->notify($o);
+            }
+        }
+        if ($r['ok'] && ($r['otp'] !== null || $r['success'])) {
+            $this->markSuccess($o, $r['otp'] ?? '', $r['sms'], $r['cost']);
         } elseif ($r['expired'] || strtotime($o['expires_at']) <= time()) {
-            $this->refund($o, 'refunded', 'Hết thời gian chờ OTP');
+            $this->refund($o, 'refunded', $r['expired'] ? 'Không nhận được OTP' : 'Hết thời gian chờ OTP');
         }
         return DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
     }
 
-    private function markSuccess(array $o, string $otp, ?string $sms): void
+    private function markSuccess(array $o, string $otp, ?string $sms, ?float $cost): void
     {
-        $n = DB::update('orders', ['status' => 'success', 'otp' => $otp, 'sms' => $sms, 'updated_at' => now()], "id = ? AND status = 'pending'", [$o['id']]);
-        if ($n === 0) {
+        $data = ['status' => 'success', 'otp' => $otp, 'sms' => $sms, 'updated_at' => now()];
+        if ($cost !== null) {
+            $data['cost'] = $cost;
+        }
+        if (DB::update('orders', $data, "id = ? AND status = 'pending'", [$o['id']]) === 0) {
             return;
         }
         DB::query('UPDATE users SET total_spent = total_spent + ? WHERE id = ?', [$o['price'], $o['user_id']]);
@@ -137,7 +195,9 @@ final class OrderService
         $this->notify($updated);
         // Tin nhắn mới để người dùng nhận được thông báo đẩy
         $tgId = DB::value('SELECT tg_id FROM users WHERE id = ?', [$o['user_id']]);
-        $this->tg->send($tgId, "🔑 <b>OTP đơn #{$o['id']}</b> (" . tg_escape($o['service_name']) . ")\nSĐT: <code>" . tg_escape($o['phone']) . "</code>\nOTP: <code>" . tg_escape($otp) . '</code>');
+        $this->tg->send($tgId, "🔑 <b>Đơn #{$o['id']} hoàn thành</b> (" . tg_escape($o['service_name']) . ")\nSĐT: <code>" . tg_escape($o['phone']) . '</code>'
+            . ($otp !== '' ? "\nOTP: <code>" . tg_escape($otp) . '</code>' : '')
+            . ($sms ? "\nSMS: " . tg_escape(mb_substr($sms, 0, 500)) : ''));
     }
 
     /** Hủy đơn + hoàn tiền. $status: refunded | cancelled. */
@@ -156,6 +216,42 @@ final class OrderService
         return true;
     }
 
+    /**
+     * Gửi SMS / chuyển tiếp cuộc gọi cho đơn đang chờ.
+     * $kind: fixed | custom | forward
+     */
+    public function sendSms(array $o, string $kind, string $number = '', string $content = ''): array
+    {
+        if ($o['status'] !== 'pending') {
+            return ['ok' => false, 'message' => 'Đơn không còn ở trạng thái chờ.'];
+        }
+        if ($o['sms_sent']) {
+            return ['ok' => false, 'message' => 'Đơn này đã gửi yêu cầu rồi (mỗi đơn chỉ 1 lần).'];
+        }
+        $params = match ($kind) {
+            'custom' => ['sms' => $content, 'number_receiver' => $number],
+            'forward' => ['number_forward_call' => $number],
+            default => [],
+        };
+        // Đánh dấu trước để tránh gửi 2 lần khi bấm liên tục
+        if (DB::update('orders', ['sms_sent' => 1], 'id = ? AND sms_sent = 0', [$o['id']]) === 0) {
+            return ['ok' => false, 'message' => 'Đơn này đã gửi yêu cầu rồi.'];
+        }
+        $r = $this->api->sendSms((string)$o['provider_order_id'], $params);
+        if (!$r['ok']) {
+            DB::update('orders', ['sms_sent' => 0], 'id = ?', [$o['id']]);
+            return $r;
+        }
+        $info = match ($kind) {
+            'custom' => 'Đã gửi SMS tới ' . $number . ': "' . mb_substr($content, 0, 100) . '"',
+            'forward' => 'Đã chuyển tiếp cuộc gọi tới ' . $number,
+            default => 'Đã yêu cầu gửi SMS',
+        };
+        DB::update('orders', ['sms_info' => mb_substr($info, 0, 250), 'updated_at' => now()], 'id = ?', [$o['id']]);
+        $this->notify(DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]));
+        return ['ok' => true, 'message' => $info];
+    }
+
     /** Chạy bởi cron: kiểm tra tất cả đơn đang chờ. */
     public function pollAll(): int
     {
@@ -164,6 +260,7 @@ final class OrderService
             try {
                 $this->poll($o);
                 $count++;
+                usleep(200000); // BossOTP giới hạn 1 request/giây cho mỗi rent_id
             } catch (Throwable $e) {
                 app_log('cron', "order {$o['id']}: " . $e->getMessage());
             }

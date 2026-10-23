@@ -64,8 +64,10 @@ layout_start('Đơn thuê sim');
         <tr>
             <td><?= $o['id'] ?></td>
             <td><a href="users.php?id=<?= $o['user_id'] ?>"><?= h($o['username'] ? '@' . $o['username'] : $o['tg_id']) ?></a></td>
-            <td><?= h($o['service_name']) ?></td><td><?= h($o['phone']) ?></td>
-            <td><code><?= h($o['otp']) ?></code><?php if ($o['sms']): ?><div class="small text-muted text-truncate" style="max-width:220px" title="<?= h($o['sms']) ?>"><?= h($o['sms']) ?></div><?php endif; ?></td>
+            <td><?= h($o['service_name']) ?></td><td><?= h($o['phone']) ?><?php if ($o['network']): ?><div class="small text-muted"><?= h($o['network']) ?></div><?php endif; ?></td>
+            <td><code><?= h($o['otp']) ?></code><?php if ($o['sms']): ?><div class="small text-muted text-truncate" style="max-width:220px" title="<?= h($o['sms']) ?>"><?= h($o['sms']) ?></div><?php endif; ?>
+                <?php if ($o['sms_info']): ?><div class="small text-primary">📤 <?= h($o['sms_info']) ?></div><?php endif; ?>
+                <?php if ($o['call_logs'] && $calls = json_decode($o['call_logs'], true)): ?><div class="small text-info">📞 <?= count($calls) ?> cuộc gọi</div><?php endif; ?></td>
             <td class="text-end"><?= money($o['price']) ?></td><td class="text-end text-muted"><?= money($o['cost']) ?></td>
             <td><?= status_badge($o['status']) ?></td><td class="small"><?= h($o['created_at']) ?></td><td class="small"><code><?= h($o['provider_order_id']) ?></code></td>
             <td class="text-nowrap">

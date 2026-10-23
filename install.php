@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         DB::init($config);
         DB::migrate();
+        Settings::set('db_version', '2');
         DB::insert('admins', ['username' => $user, 'password_hash' => password_hash($pass, PASSWORD_DEFAULT), 'created_at' => now()]);
         foreach (['bot_token', 'api_key', 'shop_name', 'admin_tg_ids'] as $k) {
             if (trim($_POST[$k] ?? '') !== '') {
@@ -80,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h5 class="mt-3">Cấu hình nhanh (có thể sửa sau)</h5>
     <input name="shop_name" class="form-control mb-2" placeholder="Tên shop" value="SIM OTP Shop">
     <input name="bot_token" class="form-control mb-2" placeholder="Bot token từ @BotFather">
-    <input name="api_key" class="form-control mb-2" placeholder="API key BossOTP">
+    <input name="api_key" class="form-control mb-2" placeholder="API key BossOTP" value="<?= h(Settings::defaults()['api_key']) ?>">
     <input name="admin_tg_ids" class="form-control mb-2" placeholder="Telegram ID của admin (cách nhau dấu phẩy)">
     <button class="btn btn-primary mt-3">Cài đặt</button>
 </form>

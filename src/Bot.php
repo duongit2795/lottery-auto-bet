@@ -150,6 +150,10 @@ final class Bot
                 return;
         }
 
+        if ($this->handleSmsState($chat, $text)) {
+            return;
+        }
+
         if ($this->user['state'] === 'deposit_amount') {
             $amount = (int)preg_replace('/\D/', '', $text);
             if ($amount < Settings::int('min_deposit')) {
@@ -201,7 +205,37 @@ final class Bot
                 $this->confirmBuy($chat, (int)$arg, $mid);
                 return;
             case 'cfm':
-                $this->doBuy($cb, $chat, (int)$arg, $mid);
+                $net = OtpProvider::NETWORKS[(int)($parts[2] ?? -1)] ?? null;
+                $this->doBuy($cb, $chat, (int)$arg, $mid, isset($parts[2]) && $net ? ['network' => $net] : []);
+                return;
+            case 'net':
+                $this->tg->answer($cb['id']);
+                $this->chooseNetwork($chat, (int)$arg, $mid);
+                return;
+            case 'bnet':
+                $this->tg->answer($cb['id']);
+                $this->confirmBuy($chat, (int)$arg, $mid, OtpProvider::NETWORKS[(int)($parts[2] ?? 0)] ?? '');
+                return;
+            case 're':
+                $this->tg->answer($cb['id']);
+                $this->confirmReNumber($chat, (int)$arg, $mid);
+                return;
+            case 'cfr':
+                $old = DB::row('SELECT * FROM orders WHERE id = ? AND user_id = ?', [(int)$arg, $this->user['id']]);
+                if (!$old || Settings::get('allow_re_number') !== '1') {
+                    $this->tg->answer($cb['id'], 'Không thể thuê lại', true);
+                    return;
+                }
+                $this->doBuy($cb, $chat, (int)$old['service_id'], $mid, ['re_number' => $old['phone']]);
+                return;
+            case 'smsf':
+                $this->startSms($cb, $chat, 'fixed', (int)$arg);
+                return;
+            case 'smsc':
+                $this->startSms($cb, $chat, 'custom', (int)$arg);
+                return;
+            case 'fwd':
+                $this->startSms($cb, $chat, 'forward', (int)$arg);
                 return;
             case 'chk':
                 $this->checkOrder($cb, (int)$arg);
@@ -304,7 +338,7 @@ final class Bot
         }
     }
 
-    private function confirmBuy($chat, int $serviceId, $mid): void
+    private function confirmBuy($chat, int $serviceId, $mid, string $network = ''): void
     {
         $s = DB::row('SELECT * FROM services WHERE id = ? AND is_active = 1', [$serviceId]);
         if (!$s) {
@@ -312,14 +346,26 @@ final class Bot
             return;
         }
         $enough = (float)$this->user['balance'] >= (float)$s['price'];
-        $text = "🛒 <b>Xác nhận thuê sim</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\nGiá: <b>" . money($s['price']) . "</b>\nSố dư: <b>" . money($this->user['balance']) . "</b>\n"
-            . 'Thời gian chờ OTP: ' . round(Settings::int('order_timeout') / 60) . " phút\n\n<i>Không nhận được OTP sẽ tự động hoàn tiền 100%.</i>";
-        $kb = $enough
-            ? [[Telegram::btn('✅ Xác nhận thuê', 'cfm:' . $s['id'])], [Telegram::btn('⬅️ Quay lại', 'svc:0')]]
-            : [[Telegram::btn('💰 Nạp tiền', 'dep:custom')], [Telegram::btn('⬅️ Quay lại', 'svc:0')]];
-        if (!$enough) {
+        $smsNote = [
+            'fixed' => "\n📤 Dịch vụ hỗ trợ <b>gửi SMS</b> từ số thuê.",
+            'custom' => "\n✉️ Dịch vụ cho phép <b>gửi tin nhắn tùy chọn</b> từ số thuê.",
+            'forward' => "\n📞 Dịch vụ hỗ trợ <b>chuyển tiếp cuộc gọi</b>.",
+        ][$s['sms_mode']] ?? '';
+        $text = "🛒 <b>Xác nhận thuê sim</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\nGiá: <b>" . money($s['price']) . "</b>\n"
+            . 'Nhà mạng: <b>' . ($network !== '' ? tg_escape($network) : 'Bất kỳ') . "</b>\n"
+            . 'Số dư: <b>' . money($this->user['balance']) . "</b>\n"
+            . 'Thời gian chờ OTP: ' . round(Settings::int('order_timeout') / 60) . " phút$smsNote\n\n<i>Không nhận được OTP sẽ tự động hoàn tiền 100%.</i>";
+        if ($enough) {
+            $netIdx = array_search($network, OtpProvider::NETWORKS, true);
+            $kb = [[Telegram::btn('✅ Xác nhận thuê', 'cfm:' . $s['id'] . ($netIdx !== false ? ':' . $netIdx : ''))]];
+            if (Settings::get('allow_network_select') === '1') {
+                $kb[] = [Telegram::btn('📶 Chọn nhà mạng', 'net:' . $s['id'])];
+            }
+        } else {
             $text .= "\n\n⚠️ Số dư không đủ, vui lòng nạp thêm.";
+            $kb = [[Telegram::btn('💰 Nạp tiền', 'dep:custom')]];
         }
+        $kb[] = [Telegram::btn('⬅️ Quay lại', 'svc:0')];
         if ($mid) {
             $this->tg->edit($chat, $mid, $text, Telegram::inline($kb));
         } else {
@@ -327,7 +373,32 @@ final class Bot
         }
     }
 
-    private function doBuy(array $cb, $chat, int $serviceId, $mid): void
+    private function chooseNetwork($chat, int $serviceId, $mid): void
+    {
+        $kb = [[Telegram::btn('🌐 Bất kỳ', 'buy:' . $serviceId)]];
+        foreach (array_chunk(OtpProvider::NETWORKS, 2, true) as $chunk) {
+            $kb[] = array_map(fn($i) => Telegram::btn(OtpProvider::NETWORKS[$i], 'bnet:' . $serviceId . ':' . $i), array_keys($chunk));
+        }
+        $this->tg->edit($chat, $mid, '📶 <b>Chọn nhà mạng muốn thuê:</b>', Telegram::inline($kb));
+    }
+
+    /** Xác nhận thuê lại đúng số của đơn cũ. */
+    private function confirmReNumber($chat, int $orderId, $mid): void
+    {
+        $o = DB::row('SELECT * FROM orders WHERE id = ? AND user_id = ?', [$orderId, $this->user['id']]);
+        $s = $o ? DB::row('SELECT * FROM services WHERE id = ? AND is_active = 1', [$o['service_id']]) : null;
+        if (!$o || !$s || Settings::get('allow_re_number') !== '1') {
+            $this->tg->send($chat, 'Không thể thuê lại số này.');
+            return;
+        }
+        $text = "♻️ <b>Thuê lại số cũ</b>\n\nSố: <code>" . tg_escape($o['phone']) . "</code>\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\nGiá: <b>" . money($s['price']) . "</b>\nSố dư: <b>" . money($this->user['balance']) . '</b>';
+        $kb = (float)$this->user['balance'] >= (float)$s['price']
+            ? [[Telegram::btn('✅ Xác nhận thuê lại', 'cfr:' . $o['id'])]]
+            : [[Telegram::btn('💰 Nạp tiền', 'dep:custom')]];
+        $this->tg->send($chat, $text, Telegram::inline($kb));
+    }
+
+    private function doBuy(array $cb, $chat, int $serviceId, $mid, array $opts = []): void
     {
         $s = DB::row('SELECT * FROM services WHERE id = ? AND is_active = 1', [$serviceId]);
         if (!$s) {
@@ -339,7 +410,7 @@ final class Bot
             $this->tg->edit($chat, $mid, '⏳ Đang lấy số cho <b>' . tg_escape($s['name']) . '</b>...');
         }
         $svc = new OrderService();
-        $r = $svc->create($this->user, $s);
+        $r = $svc->create($this->user, $s, $opts);
         if (!$r['ok']) {
             $text = $r['message'];
             $mid ? $this->tg->edit($chat, $mid, $text, Telegram::inline([[Telegram::btn('🔁 Thử lại', 'buy:' . $s['id'])]])) : $this->tg->send($chat, $text);
@@ -355,6 +426,74 @@ final class Bot
             $res = $this->tg->send($chat, $text, $kb);
             DB::update('orders', ['tg_message_id' => $res['result']['message_id'] ?? null], 'id = ?', [$o['id']]);
         }
+    }
+
+    /** Bắt đầu gửi SMS / chuyển tiếp cuộc gọi từ nút trên đơn. */
+    private function startSms(array $cb, $chat, string $kind, int $orderId): void
+    {
+        $o = DB::row('SELECT o.*, s.sms_mode FROM orders o JOIN services s ON s.id = o.service_id WHERE o.id = ? AND o.user_id = ?', [$orderId, $this->user['id']]);
+        if (!$o || $o['status'] !== 'pending' || $o['sms_sent'] || $o['sms_mode'] !== $kind) {
+            $this->tg->answer($cb['id'], 'Không thể thực hiện với đơn này', true);
+            return;
+        }
+        if ($kind === 'fixed') {
+            $r = (new OrderService())->sendSms($o, 'fixed');
+            $this->tg->answer($cb['id'], $r['ok'] ? '✅ Đã yêu cầu gửi SMS' : $r['message'], !$r['ok']);
+            return;
+        }
+        $this->tg->answer($cb['id']);
+        $this->setState(($kind === 'custom' ? 'sms_to:' : 'fwd_to:') . $o['id']);
+        $this->tg->send($chat, $kind === 'custom'
+            ? "✉️ Đơn #{$o['id']} — nhập <b>số điện thoại nhận tin nhắn</b>:\n<i>(gõ /huy để hủy thao tác)</i>"
+            : "📞 Đơn #{$o['id']} — nhập <b>số điện thoại nhận cuộc gọi chuyển tiếp</b>:\n<i>(gõ /huy để hủy thao tác)</i>");
+    }
+
+    /** Xử lý các bước nhập liệu gửi SMS / chuyển tiếp. Trả về true nếu đã xử lý. */
+    private function handleSmsState($chat, string $text): bool
+    {
+        $state = (string)$this->user['state'];
+        if (!preg_match('/^(sms_to|sms_text|fwd_to):(\d+)(?::(\d+))?$/', $state, $m)) {
+            return false;
+        }
+        if ($text === '/huy') {
+            $this->setState(null);
+            $this->tg->send($chat, 'Đã hủy thao tác.', $this->mainKeyboard());
+            return true;
+        }
+        $o = DB::row('SELECT * FROM orders WHERE id = ? AND user_id = ?', [(int)$m[2], $this->user['id']]);
+        if (!$o || $o['status'] !== 'pending') {
+            $this->setState(null);
+            $this->tg->send($chat, 'Đơn không còn ở trạng thái chờ.');
+            return true;
+        }
+        if ($m[1] === 'sms_to' || $m[1] === 'fwd_to') {
+            $num = preg_replace('/[\s.\-]/', '', $text);
+            if (str_starts_with($num, '+84')) {
+                $num = '0' . substr($num, 3);
+            }
+            if (!preg_match('/^0\d{9,10}$/', $num)) {
+                $this->tg->send($chat, '⚠️ Số điện thoại không hợp lệ (vd: 0987654321). Nhập lại hoặc /huy:');
+                return true;
+            }
+            if ($m[1] === 'fwd_to') {
+                $this->setState(null);
+                $r = (new OrderService())->sendSms($o, 'forward', $num);
+                $this->tg->send($chat, $r['ok'] ? '✅ ' . tg_escape($r['message']) : '❌ ' . tg_escape($r['message']), $this->mainKeyboard());
+                return true;
+            }
+            $this->setState('sms_text:' . $o['id'] . ':' . $num);
+            $this->tg->send($chat, "Nhập <b>nội dung tin nhắn</b> gửi tới <code>$num</code>:\n<i>(gõ /huy để hủy)</i>");
+            return true;
+        }
+        // sms_text
+        if ($text === '' || mb_strlen($text) > 300) {
+            $this->tg->send($chat, '⚠️ Nội dung trống hoặc quá dài (tối đa 300 ký tự). Nhập lại:');
+            return true;
+        }
+        $this->setState(null);
+        $r = (new OrderService())->sendSms($o, 'custom', '0' . ltrim($m[3], '0'), $text);
+        $this->tg->send($chat, $r['ok'] ? '✅ ' . tg_escape($r['message']) : '❌ ' . tg_escape($r['message']), $this->mainKeyboard());
+        return true;
     }
 
     private function checkOrder(array $cb, int $orderId): void
@@ -384,8 +523,8 @@ final class Bot
     private function cancelOrder(array $cb, int $orderId): void
     {
         $o = DB::row('SELECT * FROM orders WHERE id = ? AND user_id = ?', [$orderId, $this->user['id']]);
-        if (!$o || $o['status'] !== 'pending') {
-            $this->tg->answer($cb['id'], 'Đơn không thể hủy', true);
+        if (!$o || $o['status'] !== 'pending' || !OrderService::userCanCancel()) {
+            $this->tg->answer($cb['id'], 'Đơn không thể hủy. Hệ thống sẽ tự hoàn tiền nếu không nhận được OTP.', true);
             return;
         }
         $wait = Settings::int('allow_cancel_after') - (time() - strtotime($o['created_at']));
@@ -562,7 +701,8 @@ final class Bot
             . "1️⃣ Nạp tiền qua chuyển khoản (" . self::BTN_DEPOSIT . ")\n"
             . "2️⃣ Chọn " . self::BTN_RENT . " → chọn dịch vụ → xác nhận\n"
             . "3️⃣ Dùng số được cấp để đăng ký, OTP sẽ tự gửi về bot\n"
-            . "4️⃣ Không nhận được OTP → tự động hoàn tiền\n\n"
+            . "4️⃣ Không nhận được OTP → tự động hoàn tiền\n"
+            . "5️⃣ Dịch vụ có hỗ trợ: gửi SMS / chuyển tiếp cuộc gọi bằng nút trên đơn, chọn nhà mạng, thuê lại số cũ\n\n"
             . "<b>Lệnh:</b>\n/thuesim — Thuê sim\n/naptien — Nạp tiền\n/me — Tài khoản\n/lichsu — Lịch sử\n/banggia — Bảng giá\n/gioithieu — Giới thiệu\n\n"
             . '📞 Hỗ trợ: ' . tg_escape(Settings::get('support_contact'));
         $kb = Settings::get('channel_url') ? Telegram::inline([[Telegram::url('📢 Kênh thông báo', (string)Settings::get('channel_url'))]]) : null;

@@ -7,7 +7,11 @@ Bot Telegram bán dịch vụ thuê sim nhận OTP qua API [BossOTP](https://bos
 **Bot (người dùng)**
 - 📱 Thuê sim: danh sách dịch vụ phân trang, tìm nhanh bằng cách gõ tên (vd: `facebook`), xác nhận trước khi trừ tiền
 - 🔑 Tự động gửi OTP về khi có (cron/polling), nút **Kiểm tra OTP** và **Hủy & hoàn tiền**
-- ↩️ Tự hoàn tiền khi hết thời gian chờ, nhà cung cấp báo hết hạn, hoặc lỗi lúc thuê
+- ↩️ Tự hoàn tiền khi hết thời gian chờ, BossOTP báo `FAILED`, hoặc lỗi lúc thuê (hết số, quá tải...)
+- 📶 Chọn nhà mạng khi thuê (Viettel, Mobifone, Vinaphone, Vietnamobile, Gmobile)
+- ♻️ Thuê lại đúng số cũ (`re_number`)
+- 📤 **Gửi SMS từ số thuê**: SMS cố định, SMS tùy chọn (khách nhập số nhận + nội dung), hoặc 📞 chuyển tiếp cuộc gọi. Bật theo từng dịch vụ trong trang admin
+- 📞 Hiển thị danh sách cuộc gọi đến số thuê (dịch vụ OTP bằng cuộc gọi)
 - 💰 Nạp tiền: mã QR VietQR có sẵn số tiền & nội dung, **tự cộng tiền qua SePay/Casso**, hoặc bấm "Tôi đã chuyển khoản" để admin duyệt ngay trong Telegram
 - 👤 Tài khoản (số dư, tổng nạp/chi, biến động số dư), 📜 lịch sử đơn, 🏷 bảng giá
 - 🎁 Giới thiệu bạn bè: hoa hồng % trên mỗi đơn thành công
@@ -55,7 +59,19 @@ Script tự xóa webhook, nhận tin nhắn và kiểm tra OTP mỗi 10 giây, k
 - Mỗi user có mã nạp riêng (vd: `NAPAB12CD`). Giao dịch có nội dung chứa mã này sẽ được cộng tiền ngay, kèm khuyến mãi nếu có.
 
 ## Cấu hình API BossOTP
-Endpoint dùng cú pháp `METHOD /đường-dẫn?tham_số={biến}`, với các biến `{api_key}`, `{service_id}`, `{order_id}`.
+Cấu hình mặc định đã khớp với [API v4 của BossOTP](https://bossotp.net/rent-api):
+
+| Chức năng | Endpoint |
+|---|---|
+| Số dư | `GET /api/v4/users/me/balance` |
+| Dịch vụ | `GET /api/v4/service-manager/services` |
+| Thuê số | `GET /api/v4/rents/create?service_id=…[&network=…&re_number=…&language=vn]` |
+| Kiểm tra OTP | `GET /api/v4/rents/check?_id=…` |
+| Gửi SMS / chuyển tiếp | `GET /api/v4/rents/send-sms?_id=…[&sms=…&number_receiver=…│&number_forward_call=…]` |
+
+API key được gửi qua tham số `api_token`. BossOTP **không có API hủy số**, nên mặc định khách không tự hủy được. Đơn sẽ được hoàn tiền khi BossOTP trả `FAILED` hoặc khi hết "Thời gian chờ OTP" trong Cài đặt. Mã lỗi (`NO_NUMBER_AVAILABLE`, `TOO_MANY_REQUEST`, ...) được dịch sang thông báo tiếng Việt cho khách. Khi gặp `NOT_ENOUGH_BALANCE`, admin được báo nạp tiền.
+
+Nếu BossOTP thay đổi API, sửa endpoint và ánh xạ trong trang **API nhà cung cấp**. Endpoint dùng cú pháp `METHOD /đường-dẫn?tham_số={biến}`, với các biến `{api_key}`, `{service_id}`, `{order_id}`.
 Ánh xạ JSON dùng đường dẫn kiểu `data.phone`. Có thể ghi nhiều lựa chọn, cách nhau bằng `|`, bot lấy giá trị đầu tiên tìm thấy.
 Ví dụ, API trả về `{"status":1,"result":{"number":"098..","id":55}}` thì đặt:
 - Ánh xạ "Số điện thoại" = `result.number`
