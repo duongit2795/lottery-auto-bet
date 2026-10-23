@@ -1,0 +1,4 @@
+Options -Indexes
+<FilesMatch "^(config\.php|config\.sample\.php|bootstrap\.php|polling\.php|README\.md|\.gitignore)$">
+    Require all denied
+</FilesMatch>

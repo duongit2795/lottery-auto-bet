@@ -1,0 +1,207 @@
+<?php
+declare(strict_types=1);
+
+final class DB
+{
+    private static ?PDO $pdo = null;
+    private static string $driver = 'sqlite';
+
+    public static function init(array $config): void
+    {
+        self::$driver = $config['db_driver'] ?? 'sqlite';
+        if (self::$driver === 'mysql') {
+            $dsn = sprintf(
+                'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                $config['mysql_host'],
+                (int)$config['mysql_port'],
+                $config['mysql_db']
+            );
+            self::$pdo = new PDO($dsn, $config['mysql_user'], $config['mysql_pass']);
+        } else {
+            $path = $config['sqlite_path'] ?? APP_ROOT . '/data/bot.sqlite';
+            if (!is_dir(dirname($path))) {
+                mkdir(dirname($path), 0775, true);
+            }
+            self::$pdo = new PDO('sqlite:' . $path);
+            self::$pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
+        }
+        self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    }
+
+    public static function pdo(): PDO
+    {
+        return self::$pdo;
+    }
+
+    public static function driver(): string
+    {
+        return self::$driver;
+    }
+
+    public static function query(string $sql, array $params = []): PDOStatement
+    {
+        $st = self::$pdo->prepare($sql);
+        $st->execute($params);
+        return $st;
+    }
+
+    public static function row(string $sql, array $params = []): ?array
+    {
+        $r = self::query($sql, $params)->fetch();
+        return $r === false ? null : $r;
+    }
+
+    public static function all(string $sql, array $params = []): array
+    {
+        return self::query($sql, $params)->fetchAll();
+    }
+
+    public static function value(string $sql, array $params = [])
+    {
+        $v = self::query($sql, $params)->fetchColumn();
+        return $v === false ? null : $v;
+    }
+
+    public static function insert(string $table, array $data): int
+    {
+        $cols = array_keys($data);
+        $sql = sprintf(
+            'INSERT INTO %s (%s) VALUES (%s)',
+            $table,
+            implode(',', $cols),
+            implode(',', array_fill(0, count($cols), '?'))
+        );
+        self::query($sql, array_values($data));
+        return (int)self::$pdo->lastInsertId();
+    }
+
+    public static function update(string $table, array $data, string $where, array $params = []): int
+    {
+        $set = implode(',', array_map(fn($c) => "$c = ?", array_keys($data)));
+        return self::query("UPDATE $table SET $set WHERE $where", array_merge(array_values($data), $params))->rowCount();
+    }
+
+    public static function transaction(callable $fn)
+    {
+        self::$pdo->beginTransaction();
+        try {
+            $r = $fn();
+            self::$pdo->commit();
+            return $r;
+        } catch (Throwable $e) {
+            self::$pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /** Tạo bảng. Dùng cú pháp chung cho SQLite & MySQL. */
+    public static function migrate(): void
+    {
+        $mysql = self::$driver === 'mysql';
+        $pk = $mysql ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
+        $tail = $mysql ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' : '';
+        $text = $mysql ? 'MEDIUMTEXT' : 'TEXT';
+
+        $tables = [
+            "CREATE TABLE IF NOT EXISTS settings (
+                k VARCHAR(100) PRIMARY KEY,
+                v $text
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS admins (
+                id $pk,
+                username VARCHAR(64) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS users (
+                id $pk,
+                tg_id BIGINT NOT NULL UNIQUE,
+                username VARCHAR(64),
+                first_name VARCHAR(128),
+                balance DECIMAL(15,0) NOT NULL DEFAULT 0,
+                total_deposit DECIMAL(15,0) NOT NULL DEFAULT 0,
+                total_spent DECIMAL(15,0) NOT NULL DEFAULT 0,
+                ref_by BIGINT,
+                ref_earned DECIMAL(15,0) NOT NULL DEFAULT 0,
+                deposit_code VARCHAR(20) UNIQUE,
+                is_banned TINYINT NOT NULL DEFAULT 0,
+                state VARCHAR(64),
+                lang VARCHAR(5) DEFAULT 'vi',
+                created_at DATETIME,
+                last_active DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS services (
+                id $pk,
+                provider_id VARCHAR(64) NOT NULL UNIQUE,
+                name VARCHAR(191) NOT NULL,
+                cost DECIMAL(15,0) NOT NULL DEFAULT 0,
+                price DECIMAL(15,0) NOT NULL DEFAULT 0,
+                custom_price TINYINT NOT NULL DEFAULT 0,
+                is_active TINYINT NOT NULL DEFAULT 1,
+                sort_order INT NOT NULL DEFAULT 0,
+                updated_at DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS orders (
+                id $pk,
+                user_id INT NOT NULL,
+                service_id INT NOT NULL,
+                service_name VARCHAR(191),
+                provider_order_id VARCHAR(128),
+                phone VARCHAR(32),
+                otp VARCHAR(64),
+                sms $text,
+                price DECIMAL(15,0) NOT NULL DEFAULT 0,
+                cost DECIMAL(15,0) NOT NULL DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                tg_message_id BIGINT,
+                expires_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS deposits (
+                id $pk,
+                user_id INT NOT NULL,
+                amount DECIMAL(15,0) NOT NULL,
+                method VARCHAR(32) NOT NULL DEFAULT 'bank',
+                ref VARCHAR(128) UNIQUE,
+                note VARCHAR(255),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at DATETIME,
+                updated_at DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS transactions (
+                id $pk,
+                user_id INT NOT NULL,
+                amount DECIMAL(15,0) NOT NULL,
+                balance_after DECIMAL(15,0) NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                note VARCHAR(255),
+                created_at DATETIME
+            )$tail",
+            "CREATE TABLE IF NOT EXISTS broadcasts (
+                id $pk,
+                message $text,
+                sent INT NOT NULL DEFAULT 0,
+                failed INT NOT NULL DEFAULT 0,
+                created_at DATETIME
+            )$tail",
+        ];
+        foreach ($tables as $sql) {
+            self::$pdo->exec($sql);
+        }
+        $idx = [
+            'CREATE INDEX idx_orders_status ON orders(status)',
+            'CREATE INDEX idx_orders_user ON orders(user_id)',
+            'CREATE INDEX idx_tx_user ON transactions(user_id)',
+            'CREATE INDEX idx_dep_user ON deposits(user_id)',
+        ];
+        foreach ($idx as $sql) {
+            try {
+                self::$pdo->exec($sql);
+            } catch (PDOException $e) {
+                // index đã tồn tại
+            }
+        }
+    }
+}
