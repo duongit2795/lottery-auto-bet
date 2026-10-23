@@ -81,6 +81,7 @@ function status_badge(string $s): string
     $map = [
         'pending' => 'warning', 'success' => 'success', 'approved' => 'success',
         'refunded' => 'secondary', 'cancelled' => 'secondary', 'rejected' => 'danger',
+        'sent' => 'success', 'failed' => 'danger', 'queued' => 'warning', 'processing' => 'info',
     ];
     return '<span class="badge text-bg-' . ($map[$s] ?? 'light') . '">' . h($s) . '</span>';
 }
@@ -90,6 +91,8 @@ function layout_start(string $title): void
     $nav = [
         'index.php' => '📊 Tổng quan',
         'orders.php' => '📱 Đơn thuê',
+        'sms.php' => '✉️ Tin nhắn đã gửi',
+        'packages.php' => '📦 Gói tin nhắn',
         'deposits.php' => '💰 Nạp tiền',
         'users.php' => '👥 Người dùng',
         'services.php' => '🏷 Dịch vụ & giá',

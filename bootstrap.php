@@ -24,12 +24,13 @@ require_once APP_ROOT . '/src/Telegram.php';
 require_once APP_ROOT . '/src/OtpProvider.php';
 require_once APP_ROOT . '/src/Wallet.php';
 require_once APP_ROOT . '/src/OrderService.php';
+require_once APP_ROOT . '/src/SmsService.php';
 require_once APP_ROOT . '/src/Bot.php';
 
 DB::init($GLOBALS['config']);
 
 // Tự nâng cấp CSDL khi có phiên bản mới
-const DB_VERSION = '2';
+const DB_VERSION = '3';
 if (Settings::get('db_version') !== DB_VERSION) {
     DB::migrate();
     Settings::set('db_version', DB_VERSION);

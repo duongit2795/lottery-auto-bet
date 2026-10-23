@@ -39,6 +39,14 @@ $groups = [
         ['deposit_bonus_percent', 'Khuyến mãi nạp (%)', 'number', ''],
         ['payment_webhook_key', 'Key webhook SePay/Casso', 'text', ''],
     ],
+    '✉️ Gửi tin nhắn' => [
+        ['sms_enabled', 'Bật chức năng gửi tin nhắn', 'bool', 'Menu "✉️ Gửi tin nhắn" và "📦 Gói tin nhắn" trong bot. Giá mỗi tin = giá bán của dịch vụ'],
+        ['sms_max_bulk', 'Số người nhận tối đa mỗi lần gửi', 'number', ''],
+        ['sms_max_length', 'Độ dài nội dung tối đa (ký tự)', 'number', ''],
+        ['sms_max_attempts', 'Số lần thử lại (đổi số khác) trước khi hoàn tiền', 'number', ''],
+        ['sms_concurrency', 'Số đơn chờ đồng thời tối đa ở BossOTP', 'number', 'BossOTP giới hạn 5 yêu cầu PENDING cùng lúc. Hàng đợi tin nhắn sẽ chờ khi đạt mức này'],
+        ['sms_blacklist', 'Từ cấm trong nội dung', 'textarea', 'Cách nhau dấu phẩy. Chặn tin rác/lừa đảo, vd: otp,mat khau,chuyen khoan'],
+    ],
     '🎁 Giới thiệu' => [
         ['referral_percent', 'Hoa hồng giới thiệu (%)', 'number', 'Tính trên giá mỗi đơn thành công của người được giới thiệu'],
         ['bot_username', 'Username bot (không có @)', 'text', 'Dùng tạo link giới thiệu. Tự điền khi bấm "Kiểm tra bot"'],

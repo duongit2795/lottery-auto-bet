@@ -13,6 +13,8 @@ $stats = [
     ['Lợi nhuận hôm nay', money($sum('price - cost', $today)), 'success'],
     ['Doanh thu tháng', money($sum('price', $month)), 'info'],
     ['Lợi nhuận tháng', money($sum('price - cost', $month)), 'info'],
+    ['Tin nhắn gửi hôm nay', number_format((int)DB::value("SELECT COUNT(*) FROM sms_jobs WHERE status = 'sent' AND updated_at >= ?", [$today])), 'primary'],
+    ['Bán gói tin hôm nay', money(-(float)DB::value("SELECT COALESCE(SUM(amount),0) FROM transactions WHERE type = 'package' AND created_at >= ?", [$today])), 'primary'],
     ['Nạp tiền hôm nay', money(DB::value("SELECT COALESCE(SUM(amount),0) FROM deposits WHERE status = 'approved' AND updated_at >= ?", [$today])), 'warning'],
     ['Tổng số dư người dùng', money(DB::value('SELECT COALESCE(SUM(balance),0) FROM users')), 'danger'],
 ];

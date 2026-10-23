@@ -27,10 +27,15 @@ $loops = max(1, (int)($opts['loop'] ?? $_GET['loop'] ?? 4));
 $interval = (int)floor(55 / $loops);
 
 $svc = new OrderService();
+$sms = new SmsService();
 for ($i = 0; $i < $loops; $i++) {
     $start = time();
     $n = $svc->pollAll();
     echo '[' . now() . "] Đã kiểm tra $n đơn\n";
+    if (Settings::get('sms_enabled') === '1') {
+        $m = $sms->processQueue(max(1, (int)floor($interval / 2)));
+        echo '[' . now() . "] Đã gửi/xử lý $m tin nhắn\n";
+    }
     if ($i < $loops - 1) {
         sleep(max(0, $interval - (time() - $start)));
     }

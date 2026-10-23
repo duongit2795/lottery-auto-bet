@@ -13,6 +13,8 @@ final class Bot
     private const BTN_REF = '🎁 Giới thiệu';
     private const BTN_SUPPORT = '🆘 Hỗ trợ';
     private const BTN_PRICES = '🏷 Bảng giá';
+    private const BTN_SMS = '✉️ Gửi tin nhắn';
+    private const BTN_PKG = '📦 Gói tin nhắn';
 
     public function __construct()
     {
@@ -78,7 +80,8 @@ final class Bot
     {
         return [
             'keyboard' => [
-                [['text' => self::BTN_RENT], ['text' => self::BTN_DEPOSIT]],
+                [['text' => self::BTN_RENT], ['text' => self::BTN_SMS]],
+                [['text' => self::BTN_DEPOSIT], ['text' => self::BTN_PKG]],
                 [['text' => self::BTN_ACCOUNT], ['text' => self::BTN_HISTORY]],
                 [['text' => self::BTN_PRICES], ['text' => self::BTN_REF], ['text' => self::BTN_SUPPORT]],
             ],
@@ -127,6 +130,14 @@ final class Bot
                 $this->setState(null);
                 $this->showServices($chat, 0);
                 return;
+            case $text === self::BTN_SMS || $cmd === '/guitin':
+                $this->setState(null);
+                $this->showSmsServices($chat);
+                return;
+            case $text === self::BTN_PKG || $cmd === '/goitin':
+                $this->setState(null);
+                $this->showPackages($chat);
+                return;
             case $text === self::BTN_DEPOSIT || $cmd === '/naptien':
                 $this->setState(null);
                 $this->showDeposit($chat);
@@ -150,6 +161,9 @@ final class Bot
                 return;
         }
 
+        if ($this->handleSmsJobState($chat, $text)) {
+            return;
+        }
         if ($this->handleSmsState($chat, $text)) {
             return;
         }
@@ -264,6 +278,43 @@ final class Bot
                 return;
             case 'adep':
                 $this->adminDepositAction($cb, $arg, (int)($parts[2] ?? 0));
+                return;
+            case 'smss':
+                $this->tg->answer($cb['id']);
+                $this->startSmsJob($chat, (int)$arg);
+                return;
+            case 'smsok':
+                $this->confirmSmsJob($cb, $chat, $mid);
+                return;
+            case 'smsx':
+                $this->tg->answer($cb['id'], 'Đã hủy');
+                $this->setState(null);
+                DB::update('users', ['draft' => null], 'id = ?', [$this->user['id']]);
+                if ($mid) {
+                    $this->tg->edit($chat, $mid, '❌ Đã hủy lệnh gửi tin.');
+                }
+                return;
+            case 'smsh':
+                $this->tg->answer($cb['id']);
+                $this->showSmsHistory($chat);
+                return;
+            case 'pkgs':
+                $this->tg->answer($cb['id']);
+                $this->showPackages($chat);
+                return;
+            case 'pkg':
+                $this->tg->answer($cb['id']);
+                $this->showPackage($chat, (int)$arg, $mid);
+                return;
+            case 'pkgb':
+                $r = SmsService::buyPackage($this->user, (int)$arg);
+                $this->tg->answer($cb['id'], $r['ok'] ? 'Mua gói thành công' : 'Không mua được gói', !$r['ok']);
+                $kb = $r['ok'] ? Telegram::inline([[Telegram::btn('✉️ Gửi tin ngay', 'smsm')]]) : Telegram::inline([[Telegram::btn('💰 Nạp tiền', 'dep:custom')]]);
+                $mid ? $this->tg->edit($chat, $mid, $r['message'], $kb) : $this->tg->send($chat, $r['message'], $kb);
+                return;
+            case 'smsm':
+                $this->tg->answer($cb['id']);
+                $this->showSmsServices($chat);
                 return;
             case 'close':
                 $this->tg->answer($cb['id']);
@@ -644,6 +695,228 @@ final class Bot
         }
     }
 
+    // ------------------------------------------------------- gửi tin nhắn
+
+    private function showSmsServices($chat): void
+    {
+        if (Settings::get('sms_enabled') !== '1') {
+            $this->tg->send($chat, 'Chức năng gửi tin nhắn đang tạm tắt.');
+            return;
+        }
+        $services = SmsService::services();
+        if (!$services) {
+            $this->tg->send($chat, '😔 Hiện chưa có dịch vụ gửi tin nhắn. Vui lòng quay lại sau.');
+            return;
+        }
+        $credits = SmsService::credits((int)$this->user['id']);
+        $kb = array_map(fn($s) => [Telegram::btn($s['name'] . ' — ' . money($s['price']) . '/tin', 'smss:' . $s['id'])], $services);
+        $kb[] = [Telegram::btn('📦 Mua gói tin', 'pkgs'), Telegram::btn('📜 Lịch sử gửi', 'smsh')];
+        $this->tg->send($chat, "✉️ <b>GỬI TIN NHẮN</b>\n\nGửi SMS tới bất kỳ số điện thoại nào bằng sim thuê.\n"
+            . 'Số dư: <b>' . money($this->user['balance']) . "</b>\n"
+            . "Lượt gói còn lại: <b>$credits</b>\n\n"
+            . '<i>Có lượt gói sẽ được dùng trước, hết lượt mới trừ tiền. Gửi lỗi được hoàn tiền/lượt.</i>' . "\n\nChọn dịch vụ:", Telegram::inline($kb));
+    }
+
+    private function startSmsJob($chat, int $serviceId): void
+    {
+        $s = DB::row("SELECT * FROM services WHERE id = ? AND is_active = 1 AND sms_mode IN ('custom', 'fixed')", [$serviceId]);
+        if (!$s) {
+            $this->tg->send($chat, 'Dịch vụ không tồn tại hoặc đã tắt.');
+            return;
+        }
+        if ($s['sms_mode'] === 'fixed') {
+            // SMS cố định: không cần nhập số nhận / nội dung
+            $this->saveDraft(['sid' => $s['id'], 'to' => [''], 'text' => '']);
+            $this->showSmsConfirm($chat);
+            return;
+        }
+        $this->saveDraft(['sid' => $s['id']]);
+        $this->setState('smsj_to');
+        $max = Settings::int('sms_max_bulk');
+        $this->tg->send($chat, '✉️ <b>' . tg_escape($s['name']) . "</b>\n\nNhập <b>số điện thoại nhận tin</b>.\n"
+            . "Gửi nhiều số: mỗi số 1 dòng hoặc cách nhau dấu phẩy (tối đa $max số).\n\n<i>Gõ /huy để hủy.</i>");
+    }
+
+    private function saveDraft(?array $draft): void
+    {
+        DB::update('users', ['draft' => $draft === null ? null : json_encode($draft, JSON_UNESCAPED_UNICODE)], 'id = ?', [$this->user['id']]);
+        $this->user['draft'] = $draft === null ? null : json_encode($draft, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function draft(): array
+    {
+        return json_decode((string)($this->user['draft'] ?? ''), true) ?: [];
+    }
+
+    private function handleSmsJobState($chat, string $text): bool
+    {
+        $state = (string)$this->user['state'];
+        if ($state !== 'smsj_to' && $state !== 'smsj_text') {
+            return false;
+        }
+        if ($text === '/huy') {
+            $this->setState(null);
+            $this->saveDraft(null);
+            $this->tg->send($chat, 'Đã hủy thao tác.', $this->mainKeyboard());
+            return true;
+        }
+        $d = $this->draft();
+        if (empty($d['sid'])) {
+            $this->setState(null);
+            return false;
+        }
+        if ($state === 'smsj_to') {
+            [$ok, $bad] = SmsService::parseNumbers($text);
+            $max = Settings::int('sms_max_bulk');
+            if (!$ok) {
+                $this->tg->send($chat, '⚠️ Không có số điện thoại hợp lệ (vd: 0987654321). Nhập lại hoặc /huy:');
+                return true;
+            }
+            if ($max > 0 && count($ok) > $max) {
+                $this->tg->send($chat, "⚠️ Tối đa $max số mỗi lần (bạn nhập " . count($ok) . '). Nhập lại:');
+                return true;
+            }
+            $d['to'] = $ok;
+            $this->saveDraft($d);
+            $this->setState('smsj_text');
+            $msg = '📋 Đã nhận <b>' . count($ok) . '</b> số.';
+            if ($bad) {
+                $msg .= "\n⚠️ Bỏ qua " . count($bad) . ' số không hợp lệ: ' . tg_escape(implode(', ', array_slice($bad, 0, 10)));
+            }
+            $this->tg->send($chat, $msg . "\n\nNhập <b>nội dung tin nhắn</b> (tối đa " . Settings::int('sms_max_length') . " ký tự):\n<i>Gõ /huy để hủy.</i>");
+            return true;
+        }
+        $err = SmsService::validateContent($text);
+        if ($err) {
+            $this->tg->send($chat, '⚠️ ' . tg_escape($err) . ' Nhập lại:');
+            return true;
+        }
+        $d['text'] = $text;
+        $this->saveDraft($d);
+        $this->setState(null);
+        $this->showSmsConfirm($chat);
+        return true;
+    }
+
+    private function showSmsConfirm($chat): void
+    {
+        $d = $this->draft();
+        $s = DB::row('SELECT * FROM services WHERE id = ?', [$d['sid'] ?? 0]);
+        if (!$s || empty($d['to'])) {
+            $this->tg->send($chat, 'Phiên gửi tin đã hết hạn, vui lòng làm lại.');
+            return;
+        }
+        $q = SmsService::quote($this->user, $s, count($d['to']));
+        $text = "📨 <b>XÁC NHẬN GỬI TIN</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\n";
+        if ($s['sms_mode'] === 'custom') {
+            $list = implode(', ', array_slice($d['to'], 0, 10)) . (count($d['to']) > 10 ? ' … (+' . (count($d['to']) - 10) . ')' : '');
+            $text .= 'Người nhận (' . count($d['to']) . '): <code>' . tg_escape($list) . "</code>\n"
+                . 'Nội dung: <i>' . tg_escape(mb_substr($d['text'], 0, 300)) . "</i>\n";
+        } else {
+            $text .= "Loại: SMS cố định\n";
+        }
+        $text .= "\nSố tin: <b>{$q['count']}</b>\n";
+        if ($q['use_credits'] > 0) {
+            $text .= "Dùng lượt gói: <b>{$q['use_credits']}</b> (còn {$q['credits']})\n";
+        }
+        $text .= 'Trả bằng số dư: <b>' . money($q['amount']) . '</b>' . ($q['paid'] ? " ({$q['paid']} × " . money($s['price']) . ')' : '') . "\n"
+            . 'Số dư hiện tại: ' . money($this->user['balance']);
+        if ($q['amount'] > (float)$this->user['balance']) {
+            $text .= "\n\n⚠️ Số dư không đủ. Nạp thêm hoặc mua gói tin để gửi.";
+            $kb = [[Telegram::btn('💰 Nạp tiền', 'dep:custom'), Telegram::btn('📦 Mua gói', 'pkgs')], [Telegram::btn('❌ Hủy', 'smsx')]];
+        } else {
+            $kb = [[Telegram::btn('✅ Xác nhận gửi', 'smsok')], [Telegram::btn('❌ Hủy', 'smsx')]];
+        }
+        $this->tg->send($chat, $text, Telegram::inline($kb));
+    }
+
+    private function confirmSmsJob(array $cb, $chat, $mid): void
+    {
+        $d = $this->draft();
+        $s = DB::row("SELECT * FROM services WHERE id = ? AND is_active = 1 AND sms_mode IN ('custom', 'fixed')", [$d['sid'] ?? 0]);
+        if (!$s || empty($d['to'])) {
+            $this->tg->answer($cb['id'], 'Phiên gửi tin đã hết hạn, vui lòng làm lại.', true);
+            return;
+        }
+        $this->saveDraft(null); // chống bấm xác nhận 2 lần
+        $svc = new SmsService();
+        $r = $svc->createBatch($this->user, $s, $d['to'], (string)($d['text'] ?? ''));
+        if (!$r['ok']) {
+            $this->tg->answer($cb['id'], $r['message'], true);
+            return;
+        }
+        $this->tg->answer($cb['id'], 'Đã tạo lệnh gửi');
+        $n = count($d['to']);
+        $msg = "⏳ Đang gửi <b>$n</b> tin nhắn (mã <code>{$r['batch']}</code>)...\nBạn sẽ nhận báo cáo khi hoàn tất.";
+        $mid ? $this->tg->edit($chat, $mid, $msg) : $this->tg->send($chat, $msg);
+        // Gửi ngay vài tin đầu, phần còn lại do cron xử lý
+        $svc->processQueue(3, $r['batch']);
+    }
+
+    private function showSmsHistory($chat): void
+    {
+        $rows = DB::all('SELECT j.*, s.name FROM sms_jobs j LEFT JOIN services s ON s.id = j.service_id WHERE j.user_id = ? ORDER BY j.id DESC LIMIT 15', [$this->user['id']]);
+        if (!$rows) {
+            $this->tg->send($chat, 'Bạn chưa gửi tin nhắn nào.');
+            return;
+        }
+        $icon = ['sent' => '✅', 'failed' => '❌', 'queued' => '⏳', 'processing' => '⏳'];
+        $t = "📜 <b>15 TIN GẦN NHẤT</b>\n";
+        foreach ($rows as $r) {
+            $t .= "\n" . ($icon[$r['status']] ?? '•') . ' ' . date('d/m H:i', strtotime($r['created_at'])) . ' → <code>' . tg_escape($r['receiver'] ?: 'cố định') . '</code> '
+                . ($r['content'] ? '"' . tg_escape(mb_substr($r['content'], 0, 30)) . '"' : '')
+                . ($r['user_package_id'] ? ' (gói)' : ' ' . money($r['price']));
+        }
+        $this->tg->send($chat, $t);
+    }
+
+    // ----------------------------------------------------------- gói tin
+
+    private function showPackages($chat): void
+    {
+        $pkgs = DB::all('SELECT p.*, s.name AS service_name FROM sms_packages p LEFT JOIN services s ON s.id = p.service_id WHERE p.is_active = 1 ORDER BY p.sort_order DESC, p.price');
+        $mine = SmsService::activePackages((int)$this->user['id']);
+        $t = "📦 <b>GÓI TIN NHẮN</b>\n\nMua gói để gửi tin với giá rẻ hơn. Mỗi lượt = 1 tin nhắn.\n";
+        if ($mine) {
+            $t .= "\n<b>Gói của bạn:</b>\n";
+            foreach ($mine as $m) {
+                $t .= '• ' . tg_escape($m['name']) . ": <b>{$m['credits_left']}/{$m['credits_total']}</b> lượt"
+                    . ($m['expires_at'] ? ' — HSD ' . date('d/m/Y H:i', strtotime($m['expires_at'])) : '') . "\n";
+            }
+        }
+        if (!$pkgs) {
+            $this->tg->send($chat, $t . "\nHiện chưa có gói nào được mở bán.");
+            return;
+        }
+        $kb = [];
+        foreach ($pkgs as $p) {
+            $kb[] = [Telegram::btn($p['name'] . ' — ' . money($p['price']), 'pkg:' . $p['id'])];
+        }
+        $kb[] = [Telegram::btn('✉️ Gửi tin nhắn', 'smsm')];
+        $this->tg->send($chat, $t . "\nChọn gói muốn mua:", Telegram::inline($kb));
+    }
+
+    private function showPackage($chat, int $id, $mid): void
+    {
+        $p = DB::row('SELECT p.*, s.name AS service_name, s.price AS unit FROM sms_packages p LEFT JOIN services s ON s.id = p.service_id WHERE p.id = ? AND p.is_active = 1', [$id]);
+        if (!$p) {
+            $this->tg->send($chat, 'Gói không tồn tại.');
+            return;
+        }
+        $per = (int)$p['credits'] > 0 ? (float)$p['price'] / (int)$p['credits'] : 0;
+        $t = '📦 <b>' . tg_escape($p['name']) . "</b>\n\n"
+            . 'Số lượt: <b>' . (int)$p['credits'] . " tin</b>\n"
+            . 'Giá: <b>' . money($p['price']) . '</b> (~' . money($per) . "/tin)\n"
+            . 'Hạn dùng: <b>' . ((int)$p['days_valid'] > 0 ? (int)$p['days_valid'] . ' ngày' : 'Vĩnh viễn') . "</b>\n"
+            . 'Áp dụng: <b>' . tg_escape($p['service_name'] ?: 'Tất cả dịch vụ gửi tin') . "</b>\n"
+            . ($p['description'] ? "\n" . tg_escape($p['description']) . "\n" : '')
+            . "\nSố dư của bạn: " . money($this->user['balance']);
+        $kb = (float)$this->user['balance'] >= (float)$p['price']
+            ? [[Telegram::btn('🛒 Mua gói này', 'pkgb:' . $p['id'])], [Telegram::btn('⬅️ Quay lại', 'pkgs')]]
+            : [[Telegram::btn('💰 Nạp tiền', 'dep:custom')], [Telegram::btn('⬅️ Quay lại', 'pkgs')]];
+        $mid ? $this->tg->edit($chat, $mid, $t, Telegram::inline($kb)) : $this->tg->send($chat, $t, Telegram::inline($kb));
+    }
+
     private function showAccount($chat): void
     {
         $u = $this->user;
@@ -656,6 +929,7 @@ final class Bot
             . '📤 Tổng chi: ' . money($u['total_spent']) . "\n"
             . "✅ Đơn thành công: $orders\n"
             . '🎁 Hoa hồng: ' . money($u['ref_earned']) . "\n"
+            . '📦 Lượt gói tin còn lại: ' . SmsService::credits((int)$u['id']) . "\n"
             . '📅 Tham gia: ' . date('d/m/Y', strtotime($u['created_at']));
         $tx = DB::all('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 5', [$u['id']]);
         if ($tx) {
@@ -703,7 +977,7 @@ final class Bot
             . "3️⃣ Dùng số được cấp để đăng ký, OTP sẽ tự gửi về bot\n"
             . "4️⃣ Không nhận được OTP → tự động hoàn tiền\n"
             . "5️⃣ Dịch vụ có hỗ trợ: gửi SMS / chuyển tiếp cuộc gọi bằng nút trên đơn, chọn nhà mạng, thuê lại số cũ\n\n"
-            . "<b>Lệnh:</b>\n/thuesim — Thuê sim\n/naptien — Nạp tiền\n/me — Tài khoản\n/lichsu — Lịch sử\n/banggia — Bảng giá\n/gioithieu — Giới thiệu\n\n"
+            . "<b>Lệnh:</b>\n/thuesim — Thuê sim\n/guitin — Gửi tin nhắn\n/goitin — Gói tin nhắn\n/naptien — Nạp tiền\n/me — Tài khoản\n/lichsu — Lịch sử\n/banggia — Bảng giá\n/gioithieu — Giới thiệu\n\n"
             . '📞 Hỗ trợ: ' . tg_escape(Settings::get('support_contact'));
         $kb = Settings::get('channel_url') ? Telegram::inline([[Telegram::url('📢 Kênh thông báo', (string)Settings::get('channel_url'))]]) : null;
         $this->tg->send($chat, $text, $kb);

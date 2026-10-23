@@ -103,6 +103,9 @@ final class OrderService
 
     public static function orderKeyboard(array $o): ?array
     {
+        if (($o['kind'] ?? 'otp') === 'sms') {
+            return null;
+        }
         if ($o['status'] === 'pending') {
             $rows = [];
             $mode = (string)DB::value('SELECT sms_mode FROM services WHERE id = ?', [$o['service_id']]);
@@ -256,7 +259,7 @@ final class OrderService
     public function pollAll(): int
     {
         $count = 0;
-        foreach (DB::all("SELECT * FROM orders WHERE status = 'pending' ORDER BY id") as $o) {
+        foreach (DB::all("SELECT * FROM orders WHERE status = 'pending' AND kind = 'otp' ORDER BY id") as $o) {
             try {
                 $this->poll($o);
                 $count++;

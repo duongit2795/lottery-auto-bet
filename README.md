@@ -12,6 +12,9 @@ Bot Telegram bán dịch vụ thuê sim nhận OTP qua API [BossOTP](https://bos
 - ♻️ Thuê lại đúng số cũ (`re_number`)
 - 📤 **Gửi SMS từ số thuê**: SMS cố định, SMS tùy chọn (khách nhập số nhận + nội dung), hoặc 📞 chuyển tiếp cuộc gọi. Bật theo từng dịch vụ trong trang admin
 - 📞 Hiển thị danh sách cuộc gọi đến số thuê (dịch vụ OTP bằng cuộc gọi)
+- ✉️ **Gửi tin nhắn** (menu riêng): chọn dịch vụ, nhập 1 hoặc nhiều số nhận (tối đa 50/lần), nhập nội dung, xác nhận. Bot thuê số và gửi SMS qua hàng đợi, rồi gửi báo cáo kết quả. Tin lỗi được thử lại bằng số khác, quá số lần thử thì hoàn tiền hoặc hoàn lượt
+- 📦 **Gói tin nhắn**: admin tạo gói (vd 100 tin / 50.000đ / 30 ngày, áp dụng cho mọi dịch vụ hoặc 1 dịch vụ). Khách mua bằng số dư. Khi gửi, lượt gói được dùng trước, hết lượt mới trừ tiền
+- Lọc từ cấm trong nội dung, giới hạn độ dài, giới hạn số yêu cầu đồng thời theo quy định của BossOTP
 - 💰 Nạp tiền: mã QR VietQR có sẵn số tiền & nội dung, **tự cộng tiền qua SePay/Casso**, hoặc bấm "Tôi đã chuyển khoản" để admin duyệt ngay trong Telegram
 - 👤 Tài khoản (số dư, tổng nạp/chi, biến động số dư), 📜 lịch sử đơn, 🏷 bảng giá
 - 🎁 Giới thiệu bạn bè: hoa hồng % trên mỗi đơn thành công
@@ -24,6 +27,8 @@ Bot Telegram bán dịch vụ thuê sim nhận OTP qua API [BossOTP](https://bos
 - Đơn thuê: lọc/tìm, check OTP thủ công, hủy/hoàn tiền (kể cả đơn đã thành công khi khách khiếu nại)
 - Nạp tiền: duyệt/từ chối (sửa được số tiền thực nhận), nạp thủ công
 - Người dùng: tìm kiếm, cộng/trừ tiền, khóa, nhắn tin riêng, xem lịch sử
+- Tin nhắn đã gửi: theo dõi hàng đợi, hủy (có hoàn tiền), gửi lại tin lỗi, chạy hàng đợi ngay
+- Gói tin nhắn: tạo/sửa gói, tặng gói cho khách, chỉnh lượt và hạn dùng của gói khách đã mua
 - Dịch vụ & giá: đồng bộ từ API, tự tính giá bán theo % hoặc số tiền lãi, sửa giá/tên, bật/tắt, sắp xếp
 - Gửi thông báo hàng loạt
 - Cài đặt bot, ngân hàng, giá, giới thiệu; đặt webhook bằng 1 nút; đổi mật khẩu

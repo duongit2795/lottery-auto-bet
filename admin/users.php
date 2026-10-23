@@ -84,6 +84,12 @@ if (!empty($_GET['id'])) {
             </form>
         </div>
         <div class="col-lg-8">
+            <?php $pk = DB::all('SELECT * FROM user_packages WHERE user_id = ? ORDER BY id DESC LIMIT 20', [$u['id']]); if ($pk): ?>
+            <div class="card card-body mb-3"><h6>Gói tin nhắn (<a href="packages.php">quản lý</a>)</h6><table class="table table-sm mb-0">
+                <tr><th>Gói</th><th>Lượt còn</th><th>Hết hạn</th><th>Mua lúc</th></tr>
+                <?php foreach ($pk as $x): ?><tr><td><?= h($x['name']) ?></td><td><?= (int)$x['credits_left'] ?>/<?= (int)$x['credits_total'] ?></td><td><?= h($x['expires_at'] ?: 'Vĩnh viễn') ?></td><td><?= h($x['created_at']) ?></td></tr><?php endforeach; ?>
+            </table></div>
+            <?php endif; ?>
             <div class="card card-body mb-3"><h6>Biến động số dư</h6><div class="table-responsive"><table class="table table-sm">
                 <tr><th>Thời gian</th><th>Loại</th><th class="text-end">Số tiền</th><th class="text-end">Số dư sau</th><th>Ghi chú</th></tr>
                 <?php foreach ($tx as $t): ?><tr><td><?= h($t['created_at']) ?></td><td><?= h($t['type']) ?></td>
