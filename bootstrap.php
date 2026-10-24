@@ -6,6 +6,14 @@ mb_internal_encoding('UTF-8');
 
 define('APP_ROOT', __DIR__);
 
+// Không hiện cảnh báo/lỗi PHP ra trang web; ghi vào data/logs/php-error.log
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+if (is_dir(APP_ROOT . '/data') && is_writable(APP_ROOT . '/data')) {
+    @mkdir(APP_ROOT . '/data/logs', 0775, true);
+    ini_set('error_log', APP_ROOT . '/data/logs/php-error.log');
+}
+
 if (!file_exists(APP_ROOT . '/config.php')) {
     if (PHP_SAPI === 'cli') {
         fwrite(STDERR, "Chưa có config.php. Chạy install.php trước.\n");

@@ -19,14 +19,11 @@ final class DB
             $opts = [PDO::ATTR_TIMEOUT => 10];
             if (!empty($config['mysql_ssl'])) {
                 // Database đám mây (Aiven, TiDB, PlanetScale, ...) thường bắt buộc SSL
-                $ca = $config['mysql_ssl_ca'] ?? '';
-                foreach ([$ca, '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt', '/etc/ssl/cert.pem'] as $path) {
-                    if ($path !== '' && is_readable($path)) {
-                        $opts[PDO::MYSQL_ATTR_SSL_CA] = $path;
-                        break;
-                    }
+                $ca = self::caFile((string)($config['mysql_ssl_ca'] ?? ''));
+                if ($ca !== null) {
+                    $opts[PDO::MYSQL_ATTR_SSL_CA] = $ca;
                 }
-                $opts[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = isset($opts[PDO::MYSQL_ATTR_SSL_CA]);
+                $opts[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = $ca !== null;
             }
             self::$pdo = new PDO($dsn, $config['mysql_user'], $config['mysql_pass'], $opts);
             try {
@@ -44,6 +41,49 @@ final class DB
         }
         self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    }
+
+    /** Đường dẫn được phép đọc theo open_basedir của hosting (aaPanel bật mặc định). */
+    private static function allowedPath(string $path): bool
+    {
+        $base = (string)ini_get('open_basedir');
+        if ($base === '') {
+            return true;
+        }
+        foreach (explode(PATH_SEPARATOR, $base) as $dir) {
+            if ($dir !== '' && str_starts_with($path, rtrim($dir, '/') . '/')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * File CA để xác thực SSL của MySQL. Thứ tự: đường dẫn trong config → data/cacert.pem →
+     * CA hệ thống (nếu open_basedir cho phép) → tự tải bộ CA của curl.se về data/cacert.pem.
+     */
+    private static function caFile(string $configured): ?string
+    {
+        $local = APP_ROOT . '/data/cacert.pem';
+        foreach ([$configured, $local, '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt', '/etc/ssl/cert.pem'] as $path) {
+            if ($path !== '' && self::allowedPath($path) && @is_readable($path)) {
+                return $path;
+            }
+        }
+        foreach (['https://curl.se/ca/cacert.pem', 'https://raw.githubusercontent.com/bagder/ca-bundle/master/ca-bundle.crt'] as $url) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 10]);
+            $pem = curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200 && is_string($pem) && str_contains($pem, 'BEGIN CERTIFICATE')) {
+                if (!is_dir(dirname($local))) {
+                    @mkdir(dirname($local), 0775, true);
+                }
+                return @file_put_contents($local, $pem) !== false ? $local : null;
+            }
+        }
+        return null;
     }
 
     public static function pdo(): PDO
