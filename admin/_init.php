@@ -99,6 +99,7 @@ function layout_start(string $title): void
         'broadcast.php' => '📢 Thông báo',
         'settings.php' => '⚙️ Cài đặt',
         'api.php' => '🔌 API nhà cung cấp',
+        'update.php' => '🔄 Cập nhật',
     ];
     $cur = basename($_SERVER['SCRIPT_NAME']);
     $pendingDep = (int)DB::value("SELECT COUNT(*) FROM deposits WHERE status = 'pending'");

@@ -74,6 +74,19 @@ Script tự xóa webhook, nhận tin nhắn và kiểm tra OTP mỗi 10 giây, k
 - Casso: webhook URL như trên, "Secure token" = chuỗi trên.
 - Mỗi user có mã nạp riêng (vd: `NAPAB12CD`). Giao dịch có nội dung chứa mã này sẽ được cộng tiền ngay, kèm khuyến mãi nếu có.
 
+## Cập nhật phiên bản mới (không cần vào aaPanel)
+Vào **Admin → 🔄 Cập nhật**:
+- **Cập nhật từ GitHub** (khuyên dùng): bấm 1 nút để tải bản mới nhất từ repo/nhánh đã cấu hình. Repo private cần nhập GitHub token (quyền Contents: Read-only).
+- **Cập nhật bằng file zip**: upload file zip mã nguồn.
+
+Mỗi lần cập nhật, hệ thống:
+1. Kiểm tra file zip đúng là mã nguồn bot. Nếu hosting cho chạy lệnh `php -l` thì kiểm tra cả lỗi cú pháp.
+2. Tự sao lưu bản đang chạy (giữ 5 bản gần nhất).
+3. Chép đè mã nguồn, **giữ nguyên `config.php` và dữ liệu trong `data/`**.
+4. Mở thử trang admin. Nếu bị lỗi 500 thì tự khôi phục bản cũ.
+
+Cơ sở dữ liệu tự nâng cấp ở lần chạy đầu sau khi cập nhật. Muốn quay về bản trước, bấm **Khôi phục** ở mục Bản sao lưu. Cần cài extension PHP `zip` (aaPanel: App Store → PHP → Settings → Install extensions → zip) và cấp quyền ghi cho user chạy PHP.
+
 ## Cấu hình API BossOTP
 Cấu hình mặc định đã khớp với [API v4 của BossOTP](https://bossotp.net/rent-api):
 

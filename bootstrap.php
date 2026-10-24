@@ -26,6 +26,7 @@ require_once APP_ROOT . '/src/Wallet.php';
 require_once APP_ROOT . '/src/OrderService.php';
 require_once APP_ROOT . '/src/SmsService.php';
 require_once APP_ROOT . '/src/Bot.php';
+require_once APP_ROOT . '/src/Updater.php';
 
 DB::init($GLOBALS['config']);
 

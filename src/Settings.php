@@ -45,6 +45,11 @@ final class Settings
             'deposit_bonus_percent' => '0',
             'payment_webhook_key' => '',   // key xác thực webhook SePay/Casso
 
+            // Cập nhật mã nguồn từ GitHub (trang Admin → Cập nhật)
+            'update_repo' => 'duongit2795/lottery-auto-bet',
+            'update_branch' => 'claude/telegram-sim-service-bot-9so4of',
+            'update_token' => '',          // GitHub token, chỉ cần khi repo private
+
             // Gửi tin nhắn
             'sms_enabled' => '1',
             'sms_max_bulk' => '50',        // số người nhận tối đa mỗi lần gửi
