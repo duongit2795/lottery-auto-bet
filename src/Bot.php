@@ -283,6 +283,10 @@ final class Bot
                 $this->tg->answer($cb['id']);
                 $this->startSmsJob($chat, (int)$arg);
                 return;
+            case 'smst':
+                $this->tg->answer($cb['id']);
+                $this->startSmsJob($chat, (int)$arg, ($parts[2] ?? '') === 'f' ? 'f' : 'c');
+                return;
             case 'smsok':
                 $this->confirmSmsJob($cb, $chat, $mid);
                 return;
@@ -397,11 +401,8 @@ final class Bot
             return;
         }
         $enough = (float)$this->user['balance'] >= (float)$s['price'];
-        $smsNote = [
-            'fixed' => "\n📤 Dịch vụ hỗ trợ <b>gửi SMS</b> từ số thuê.",
-            'custom' => "\n✉️ Dịch vụ cho phép <b>gửi tin nhắn tùy chọn</b> từ số thuê.",
-            'forward' => "\n📞 Dịch vụ hỗ trợ <b>chuyển tiếp cuộc gọi</b>.",
-        ][$s['sms_mode']] ?? '';
+        $features = array_filter(OrderService::FEATURES, fn($col) => !empty($s[$col]), ARRAY_FILTER_USE_KEY);
+        $smsNote = $features ? "\nHỗ trợ: " . implode(', ', array_column($features, 1)) : '';
         $text = "🛒 <b>Xác nhận thuê sim</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\nGiá: <b>" . money($s['price']) . "</b>\n"
             . 'Nhà mạng: <b>' . ($network !== '' ? tg_escape($network) : 'Bất kỳ') . "</b>\n"
             . 'Số dư: <b>' . money($this->user['balance']) . "</b>\n"
@@ -482,8 +483,9 @@ final class Bot
     /** Bắt đầu gửi SMS / chuyển tiếp cuộc gọi từ nút trên đơn. */
     private function startSms(array $cb, $chat, string $kind, int $orderId): void
     {
-        $o = DB::row('SELECT o.*, s.sms_mode FROM orders o JOIN services s ON s.id = o.service_id WHERE o.id = ? AND o.user_id = ?', [$orderId, $this->user['id']]);
-        if (!$o || $o['status'] !== 'pending' || $o['sms_sent'] || $o['sms_mode'] !== $kind) {
+        $col = ['fixed' => 'sup_default_sms', 'custom' => 'sup_custom_sms', 'forward' => 'sup_forward_call'][$kind];
+        $o = DB::row("SELECT o.*, s.$col AS supported FROM orders o JOIN services s ON s.id = o.service_id WHERE o.id = ? AND o.user_id = ?", [$orderId, $this->user['id']]);
+        if (!$o || $o['status'] !== 'pending' || $o['sms_sent'] || !$o['supported']) {
             $this->tg->answer($cb['id'], 'Không thể thực hiện với đơn này', true);
             return;
         }
@@ -717,14 +719,29 @@ final class Bot
             . '<i>Có lượt gói sẽ được dùng trước, hết lượt mới trừ tiền. Gửi lỗi được hoàn tiền/lượt.</i>' . "\n\nChọn dịch vụ:", Telegram::inline($kb));
     }
 
-    private function startSmsJob($chat, int $serviceId): void
+    private function startSmsJob($chat, int $serviceId, string $mode = ''): void
     {
-        $s = DB::row("SELECT * FROM services WHERE id = ? AND is_active = 1 AND sms_mode IN ('custom', 'fixed')", [$serviceId]);
+        $s = DB::row('SELECT * FROM services WHERE id = ? AND is_active = 1 AND (sup_custom_sms = 1 OR sup_default_sms = 1)', [$serviceId]);
         if (!$s) {
             $this->tg->send($chat, 'Dịch vụ không tồn tại hoặc đã tắt.');
             return;
         }
-        if ($s['sms_mode'] === 'fixed') {
+        if ($mode === '') {
+            if ($s['sup_custom_sms'] && $s['sup_default_sms']) {
+                // Hỗ trợ cả 2 kiểu → cho khách chọn
+                $this->tg->send($chat, '✉️ <b>' . tg_escape($s['name']) . "</b>\n\nChọn kiểu gửi:", Telegram::inline([
+                    [Telegram::btn('✉️ SMS tùy chọn (tự nhập số & nội dung)', 'smst:' . $s['id'] . ':c')],
+                    [Telegram::btn('📤 SMS cố định', 'smst:' . $s['id'] . ':f')],
+                ]));
+                return;
+            }
+            $mode = $s['sup_custom_sms'] ? 'c' : 'f';
+        }
+        if (($mode === 'c' && !$s['sup_custom_sms']) || ($mode === 'f' && !$s['sup_default_sms'])) {
+            $this->tg->send($chat, 'Dịch vụ không hỗ trợ kiểu gửi này.');
+            return;
+        }
+        if ($mode === 'f') {
             // SMS cố định: không cần nhập số nhận / nội dung
             $this->saveDraft(['sid' => $s['id'], 'to' => [''], 'text' => '']);
             $this->showSmsConfirm($chat);
@@ -808,7 +825,7 @@ final class Bot
         }
         $q = SmsService::quote($this->user, $s, count($d['to']));
         $text = "📨 <b>XÁC NHẬN GỬI TIN</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\n";
-        if ($s['sms_mode'] === 'custom') {
+        if ($d['to'][0] !== '') {
             $list = implode(', ', array_slice($d['to'], 0, 10)) . (count($d['to']) > 10 ? ' … (+' . (count($d['to']) - 10) . ')' : '');
             $text .= 'Người nhận (' . count($d['to']) . '): <code>' . tg_escape($list) . "</code>\n"
                 . 'Nội dung: <i>' . tg_escape(mb_substr($d['text'], 0, 300)) . "</i>\n";
@@ -833,8 +850,9 @@ final class Bot
     private function confirmSmsJob(array $cb, $chat, $mid): void
     {
         $d = $this->draft();
-        $s = DB::row("SELECT * FROM services WHERE id = ? AND is_active = 1 AND sms_mode IN ('custom', 'fixed')", [$d['sid'] ?? 0]);
-        if (!$s || empty($d['to'])) {
+        $s = DB::row('SELECT * FROM services WHERE id = ? AND is_active = 1', [$d['sid'] ?? 0]);
+        $custom = !empty($d['to']) && $d['to'][0] !== '';
+        if (!$s || empty($d['to']) || !($custom ? $s['sup_custom_sms'] : $s['sup_default_sms'])) {
             $this->tg->answer($cb['id'], 'Phiên gửi tin đã hết hạn, vui lòng làm lại.', true);
             return;
         }

@@ -24,7 +24,7 @@ final class SmsService
     /** Dịch vụ dùng được cho chức năng gửi tin nhắn. */
     public static function services(): array
     {
-        return DB::all("SELECT * FROM services WHERE is_active = 1 AND sms_mode IN ('custom', 'fixed') ORDER BY sort_order DESC, name");
+        return DB::all('SELECT * FROM services WHERE is_active = 1 AND (sup_custom_sms = 1 OR sup_default_sms = 1) ORDER BY sort_order DESC, name');
     }
 
     // ---------------------------------------------------------------- gói tin
@@ -231,7 +231,7 @@ final class SmsService
         }
         $attempt = (int)$job['attempts'] + 1;
 
-        $rent = $this->api->rent((string)$service['provider_id']);
+        $rent = $this->api->rent((string)$service['provider_id'], ['call' => !empty($service['sup_call'])]);
         if (!$rent['ok']) {
             if ($rent['code'] === 'NOT_ENOUGH_BALANCE') {
                 foreach (Settings::adminIds() as $admin) {
@@ -257,7 +257,8 @@ final class SmsService
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $params = $service['sms_mode'] === 'custom' ? ['sms' => $job['content'], 'number_receiver' => $job['receiver']] : [];
+        // Có số nhận = SMS tùy chọn, không có = SMS cố định
+        $params = $job['receiver'] ? ['sms' => $job['content'], 'number_receiver' => $job['receiver']] : [];
         $send = $this->api->sendSms((string)$rent['order_id'], $params);
 
         if (!$send['ok']) {

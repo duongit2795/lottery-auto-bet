@@ -4,6 +4,9 @@ require_login();
 
 // [key, nhãn, kiểu, ghi chú]
 $groups = [
+    '🔑 BossOTP' => [
+        ['api_key', 'API key BossOTP', 'password', 'Lấy trong trang tài khoản bossotp.net. Endpoint và các cấu hình nâng cao ở trang "API nhà cung cấp"'],
+    ],
     '🤖 Bot Telegram' => [
         ['bot_token', 'Bot token', 'password', 'Lấy từ @BotFather'],
         ['shop_name', 'Tên shop', 'text', ''],
@@ -40,6 +43,7 @@ $groups = [
         ['payment_webhook_key', 'Key webhook SePay/Casso', 'text', ''],
     ],
     '✉️ Gửi tin nhắn' => [
+        ['sms_mode_auto', 'Tự cập nhật tính năng dịch vụ theo API khi đồng bộ', 'bool', 'Đọc is_support_send_custom_sms, is_support_send_default_sms, is_support_forward_call, is_support_call... Dịch vụ gửi được SMS sẽ tự hiện trong menu gửi tin'],
         ['sms_enabled', 'Bật chức năng gửi tin nhắn', 'bool', 'Menu "✉️ Gửi tin nhắn" và "📦 Gói tin nhắn" trong bot. Giá mỗi tin = giá bán của dịch vụ'],
         ['sms_max_bulk', 'Số người nhận tối đa mỗi lần gửi', 'number', ''],
         ['sms_max_length', 'Độ dài nội dung tối đa (ký tự)', 'number', ''],
@@ -98,6 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash('Token không hợp lệ: ' . h($me['description'] ?? ''), 'danger');
         }
+    } elseif ($action === 'check_api') {
+        $r = (new OtpProvider())->request('balance');
+        $bal = (new OtpProvider())->balance();
+        flash($r['ok'] && $bal !== null ? '✅ API key hợp lệ. Số dư BossOTP: <b>' . money($bal) . '</b>' : '❌ API key không dùng được: ' . h($r['message'] ?: 'HTTP ' . $r['http']), $r['ok'] && $bal !== null ? 'success' : 'danger');
     } elseif ($action === 'password') {
         $a = DB::row('SELECT * FROM admins WHERE id = ?', [$_SESSION['admin_id']]);
         if (!password_verify($_POST['old'] ?? '', $a['password_hash'])) {
@@ -126,6 +134,7 @@ layout_start('Cài đặt');
     <form method="post" class="d-flex flex-wrap gap-2">
         <?= csrf_field() ?>
         <button name="action" value="check_bot" class="btn btn-outline-primary btn-sm">Kiểm tra bot</button>
+        <button name="action" value="check_api" class="btn btn-outline-primary btn-sm">Kiểm tra API key</button>
         <button name="action" value="set_webhook" class="btn btn-primary btn-sm">Đặt webhook → <?= h(base_url()) ?>/webhook.php</button>
         <button name="action" value="delete_webhook" class="btn btn-outline-danger btn-sm">Xóa webhook (dùng polling)</button>
     </form>

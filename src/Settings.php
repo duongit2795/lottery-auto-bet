@@ -58,7 +58,7 @@ final class Settings
 
             // Nhà cung cấp OTP (BossOTP API v4 — https://bossotp.net/rent-api)
             'api_base_url' => 'https://bossotp.net',
-            'api_key' => 'sk_ycOg6WspBrNPjDtzVkbkwVELmRMHGuMG', // TODO: thay key mới trong trang admin
+            'api_key' => '',                // nhập trong Admin → Cài đặt (không lưu trong mã nguồn)
             'api_key_param' => 'api_token', // tên tham số chứa API key
             'api_auth_mode' => 'query',     // query | bearer | header
             'api_language' => 'vn',         // ngôn ngữ cuộc gọi cho dịch vụ trả OTP bằng cuộc gọi: vn | en
@@ -76,6 +76,7 @@ final class Settings
             'api_map_service_id' => '_id|id',
             'api_map_service_name' => 'name',
             'api_map_service_price' => 'price',
+            'sms_mode_auto' => '1',          // tự cập nhật tính năng (gửi SMS, chuyển tiếp...) theo API khi đồng bộ
             'api_map_order_id' => 'rent_id',
             'api_map_phone' => 'number',
             'api_map_otp' => 'otp',

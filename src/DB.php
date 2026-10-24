@@ -142,6 +142,14 @@ final class DB
                 is_active TINYINT NOT NULL DEFAULT 1,
                 sort_order INT NOT NULL DEFAULT 0,
                 sms_mode VARCHAR(10) NOT NULL DEFAULT 'none',
+                sms_manual TINYINT NOT NULL DEFAULT 0,
+                sup_custom_sms TINYINT NOT NULL DEFAULT 0,
+                sup_default_sms TINYINT NOT NULL DEFAULT 0,
+                sup_forward_call TINYINT NOT NULL DEFAULT 0,
+                sup_call TINYINT NOT NULL DEFAULT 0,
+                sup_call_from_number TINYINT NOT NULL DEFAULT 0,
+                api_sms_mode VARCHAR(10),
+                api_raw $text,
                 updated_at DATETIME
             )$tail",
             "CREATE TABLE IF NOT EXISTS orders (
@@ -255,6 +263,14 @@ final class DB
             "ALTER TABLE orders ADD COLUMN call_logs $text",
             "ALTER TABLE orders ADD COLUMN kind VARCHAR(10) NOT NULL DEFAULT 'otp'",
             "ALTER TABLE users ADD COLUMN draft $text",
+            'ALTER TABLE services ADD COLUMN sms_manual TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN api_sms_mode VARCHAR(10)',
+            "ALTER TABLE services ADD COLUMN api_raw $text",
+            'ALTER TABLE services ADD COLUMN sup_custom_sms TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN sup_default_sms TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN sup_forward_call TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN sup_call TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN sup_call_from_number TINYINT NOT NULL DEFAULT 0',
         ];
         foreach (array_merge($columns, $idx) as $sql) {
             try {

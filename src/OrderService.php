@@ -3,12 +3,23 @@ declare(strict_types=1);
 
 final class OrderService
 {
-    /** Kiểu gửi SMS của dịch vụ (theo API send-sms của BossOTP). */
-    public const SMS_MODES = [
-        'none' => 'Không',
-        'fixed' => 'Gửi SMS cố định',
-        'custom' => 'Gửi SMS tùy chọn',
-        'forward' => 'Chuyển tiếp cuộc gọi',
+    /**
+     * Tính năng của dịch vụ theo API BossOTP: cột trong bảng services => [trường API, nhãn].
+     * Một dịch vụ có thể hỗ trợ nhiều tính năng cùng lúc.
+     */
+    public const FEATURES = [
+        'sup_custom_sms' => ['is_support_send_custom_sms', '✉️ Gửi SMS tùy chọn'],
+        'sup_default_sms' => ['is_support_send_default_sms', '📤 Gửi SMS cố định'],
+        'sup_forward_call' => ['is_support_forward_call', '📞 Chuyển tiếp cuộc gọi'],
+        'sup_call' => ['is_support_call', '☎️ OTP qua cuộc gọi'],
+        'sup_call_from_number' => ['is_support_call_from_number', '📲 Gọi từ số thuê'],
+    ];
+
+    /** Nút trên đơn đang chờ: cột tính năng => [nhãn nút, callback]. */
+    private const ORDER_ACTIONS = [
+        'sup_custom_sms' => ['✉️ Gửi tin nhắn từ số này', 'smsc'],
+        'sup_default_sms' => ['📤 Yêu cầu gửi SMS', 'smsf'],
+        'sup_forward_call' => ['📞 Chuyển tiếp cuộc gọi', 'fwd'],
     ];
 
     private OtpProvider $api;
@@ -36,7 +47,7 @@ final class OrderService
             return ['ok' => false, 'message' => 'Số dư không đủ. Cần ' . money($price) . ', hiện có ' . money($user['balance']) . '.'];
         }
 
-        $res = $this->api->rent((string)$service['provider_id'], $opts);
+        $res = $this->api->rent((string)$service['provider_id'], $opts + ['call' => !empty($service['sup_call'])]);
         if (!$res['ok']) {
             Wallet::change((int)$user['id'], $price, 'refund', 'Hoàn tiền: thuê sim lỗi');
             if ($res['code'] === 'NOT_ENOUGH_BALANCE') {
@@ -108,11 +119,13 @@ final class OrderService
         }
         if ($o['status'] === 'pending') {
             $rows = [];
-            $mode = (string)DB::value('SELECT sms_mode FROM services WHERE id = ?', [$o['service_id']]);
-            if (!$o['sms_sent'] && $mode !== '' && $mode !== 'none') {
-                $labels = ['fixed' => ['📤 Yêu cầu gửi SMS', 'smsf'], 'custom' => ['✉️ Gửi tin nhắn từ số này', 'smsc'], 'forward' => ['📞 Chuyển tiếp cuộc gọi', 'fwd']];
-                if (isset($labels[$mode])) {
-                    $rows[] = [Telegram::btn($labels[$mode][0], $labels[$mode][1] . ':' . $o['id'])];
+            $svc = DB::row('SELECT * FROM services WHERE id = ?', [$o['service_id']]);
+            if ($svc && !$o['sms_sent']) {
+                // BossOTP chỉ cho 1 lần send-sms mỗi đơn → dùng 1 trong các nút
+                foreach (self::ORDER_ACTIONS as $col => [$label, $cbName]) {
+                    if (!empty($svc[$col])) {
+                        $rows[] = [Telegram::btn($label, $cbName . ':' . $o['id'])];
+                    }
                 }
             }
             $row = [Telegram::btn('🔄 Kiểm tra OTP', 'chk:' . $o['id'])];

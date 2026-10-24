@@ -30,8 +30,15 @@ require_once APP_ROOT . '/src/Bot.php';
 DB::init($GLOBALS['config']);
 
 // Tự nâng cấp CSDL khi có phiên bản mới
-const DB_VERSION = '3';
+const DB_VERSION = '5';
 if (Settings::get('db_version') !== DB_VERSION) {
+    $oldVersion = (int)Settings::get('db_version');
     DB::migrate();
+    if ($oldVersion > 0 && $oldVersion < 5) {
+        // Chuyển cột sms_mode cũ sang cờ tính năng
+        DB::query("UPDATE services SET sup_custom_sms = 1 WHERE sms_mode = 'custom'");
+        DB::query("UPDATE services SET sup_default_sms = 1 WHERE sms_mode = 'fixed'");
+        DB::query("UPDATE services SET sup_forward_call = 1 WHERE sms_mode = 'forward'");
+    }
     Settings::set('db_version', DB_VERSION);
 }

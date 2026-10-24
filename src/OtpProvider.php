@@ -182,13 +182,35 @@ final class OtpProvider
                 continue;
             }
             $price = $this->map($item, 'service_price');
-            $out[] = ['id' => (string)$id, 'name' => (string)$name, 'price' => is_numeric($price) ? (float)$price : 0.0];
+            $out[] = [
+                'id' => (string)$id,
+                'name' => (string)$name,
+                'price' => is_numeric($price) ? (float)$price : 0.0,
+                'features' => self::features($item), // null = API không có thông tin
+                'raw' => $item,
+            ];
         }
         return ['ok' => true, 'message' => '', 'services' => $out];
     }
 
     /**
-     * Thuê số. $opts: network, prefixs, exclude_prefixs, re_number.
+     * Đọc các cờ tính năng của dịch vụ (is_support_send_custom_sms, ...).
+     * Trả về [cột => 0|1], hoặc null nếu API không trả trường nào.
+     */
+    public static function features(array $item): ?array
+    {
+        $out = [];
+        $found = false;
+        foreach (OrderService::FEATURES as $col => [$field]) {
+            $v = $item[$field] ?? null;
+            $found = $found || $v !== null;
+            $out[$col] = ($v === true || $v === 1 || $v === '1' || $v === 'true') ? 1 : 0;
+        }
+        return $found ? $out : null;
+    }
+
+    /**
+     * Thuê số. $opts: network, prefixs, exclude_prefixs, re_number, call (dịch vụ OTP qua cuộc gọi → gửi language).
      * @return array{ok:bool,code:string,message:string,order_id:?string,phone:?string}
      */
     public function rent(string $serviceId, array $opts = []): array
@@ -198,7 +220,7 @@ final class OtpProvider
             'prefixs' => $opts['prefixs'] ?? null,
             'exclude_prefixs' => $opts['exclude_prefixs'] ?? null,
             're_number' => isset($opts['re_number']) ? ltrim((string)$opts['re_number'], '0') : null,
-            'language' => Settings::get('api_language') ?: null,
+            'language' => !empty($opts['call']) ? (Settings::get('api_language') ?: 'vn') : null,
         ];
         $r = $this->request('rent', ['service_id' => $serviceId], $extra);
         $orderId = $this->map($r['data'], 'order_id');
