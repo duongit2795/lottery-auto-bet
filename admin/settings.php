@@ -46,11 +46,8 @@ $groups = [
     ],
     '✉️ Gửi tin nhắn' => [
         ['sms_mode_auto', 'Tự cập nhật tính năng dịch vụ theo API khi đồng bộ', 'bool', 'Đọc is_support_send_custom_sms, is_support_send_default_sms, is_support_forward_call, is_support_call... Dịch vụ gửi được SMS sẽ tự hiện trong menu gửi tin'],
-        ['sms_enabled', 'Bật chức năng gửi tin nhắn', 'bool', 'Menu "✉️ Gửi tin nhắn" và "📦 Gói tin nhắn" trong bot. Giá mỗi tin = giá bán của dịch vụ'],
-        ['sms_max_bulk', 'Số người nhận tối đa mỗi lần gửi', 'number', ''],
+        ['sms_enabled', 'Bật chức năng gửi tin nhắn', 'bool', 'Menu "✉️ Gửi tin nhắn": khách thuê số của dịch vụ hỗ trợ gửi SMS rồi gửi tin từ số đó. Giá = giá bán dịch vụ, hoặc 1 lượt gói tin'],
         ['sms_max_length', 'Độ dài nội dung tối đa (ký tự)', 'number', ''],
-        ['sms_max_attempts', 'Số lần thử lại (đổi số khác) trước khi hoàn tiền', 'number', ''],
-        ['sms_concurrency', 'Số đơn chờ đồng thời tối đa ở BossOTP', 'number', 'BossOTP giới hạn 5 yêu cầu PENDING cùng lúc. Hàng đợi tin nhắn sẽ chờ khi đạt mức này'],
         ['sms_blacklist', 'Từ cấm trong nội dung', 'textarea', 'Cách nhau dấu phẩy. Chặn tin rác/lừa đảo, vd: otp,mat khau,chuyen khoan'],
     ],
     '🎁 Giới thiệu' => [

@@ -21,7 +21,6 @@ echo 'Bot @' . $me['result']['username'] . " đang chạy (polling)...\n";
 
 $bot = new Bot();
 $orders = new OrderService();
-$sms = new SmsService();
 $offset = 0;
 $lastPoll = 0;
 while (true) {
@@ -34,9 +33,6 @@ while (true) {
         $orders->pollAll();
         if (BankSync::enabled()) {
             BankSync::sync();
-        }
-        if (Settings::get('sms_enabled') === '1') {
-            $sms->processQueue(5);
         }
         $lastPoll = time();
     }

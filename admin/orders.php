@@ -16,6 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($o['status'] === 'success') {
             // Hoàn tiền cho đơn đã thành công (khiếu nại OTP sai...)
             if (DB::update('orders', ['status' => 'refunded', 'updated_at' => now()], "id = ? AND status = 'success'", [$o['id']])) {
+                if (!empty($o['user_package_id'])) {
+                    SmsService::returnCredit((int)$o['user_package_id']);
+                }
                 $after = Wallet::change((int)$o['user_id'], (float)$o['price'], 'refund', "Admin hoàn tiền đơn #{$o['id']}");
                 DB::query('UPDATE users SET total_spent = total_spent - ? WHERE id = ?', [$o['price'], $o['user_id']]);
                 $tgId = DB::value('SELECT tg_id FROM users WHERE id = ?', [$o['user_id']]);

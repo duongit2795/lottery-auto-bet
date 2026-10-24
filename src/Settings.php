@@ -55,10 +55,7 @@ final class Settings
 
             // Gửi tin nhắn
             'sms_enabled' => '1',
-            'sms_max_bulk' => '50',        // số người nhận tối đa mỗi lần gửi
             'sms_max_length' => '300',     // độ dài nội dung tối đa
-            'sms_max_attempts' => '3',     // số lần thử (thuê số mới) trước khi hoàn tiền
-            'sms_concurrency' => '4',      // số đơn đang chờ tối đa phía BossOTP (BossOTP giới hạn 5)
             'sms_blacklist' => '',         // từ cấm trong nội dung, cách nhau dấu phẩy
 
             // Giới thiệu

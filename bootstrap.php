@@ -40,7 +40,7 @@ require_once APP_ROOT . '/src/BankSync.php';
 DB::init($GLOBALS['config']);
 
 // Tự nâng cấp CSDL khi có phiên bản mới
-const DB_VERSION = '6';
+const DB_VERSION = '7';
 if (Settings::get('db_version') !== DB_VERSION) {
     $oldVersion = (int)Settings::get('db_version');
     DB::migrate();

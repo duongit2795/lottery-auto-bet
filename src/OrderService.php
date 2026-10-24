@@ -42,20 +42,25 @@ final class OrderService
         if ($max > 0 && $pending >= $max) {
             return ['ok' => false, 'message' => "Bạn đang có $pending số chờ OTP. Vui lòng đợi đơn cũ kết thúc (tối đa $max)."];
         }
+        $kind = ($opts['kind'] ?? 'otp') === 'sms' ? 'sms' : 'otp';
         $price = (float)$service['price'];
-        if (Wallet::change((int)$user['id'], -$price, 'order', 'Thuê sim ' . $service['name']) === null) {
+        // Thuê số gửi tin: ưu tiên trừ 1 lượt trong gói tin nhắn
+        $packageId = $kind === 'sms' ? SmsService::useCredit((int)$user['id'], (int)$service['id']) : null;
+        if ($packageId) {
+            $price = 0;
+        } elseif (Wallet::change((int)$user['id'], -$price, 'order', ($kind === 'sms' ? 'Thuê số gửi tin ' : 'Thuê sim ') . $service['name']) === null) {
             return ['ok' => false, 'message' => 'Số dư không đủ. Cần ' . money($price) . ', hiện có ' . money($user['balance']) . '.'];
         }
 
         $res = $this->api->rent((string)$service['provider_id'], $opts + ['call' => !empty($service['sup_call'])]);
         if (!$res['ok']) {
-            Wallet::change((int)$user['id'], $price, 'refund', 'Hoàn tiền: thuê sim lỗi');
+            $packageId ? SmsService::returnCredit($packageId) : Wallet::change((int)$user['id'], $price, 'refund', 'Hoàn tiền: thuê sim lỗi');
             if ($res['code'] === 'NOT_ENOUGH_BALANCE') {
                 foreach (Settings::adminIds() as $admin) {
                     $this->tg->send($admin, '⚠️ Tài khoản BossOTP <b>hết số dư</b>, khách không thuê được số. Vui lòng nạp thêm!');
                 }
             }
-            return ['ok' => false, 'message' => '❌ ' . $res['message'] . "\nĐã hoàn " . money($price) . ' vào tài khoản.'];
+            return ['ok' => false, 'message' => '❌ ' . $res['message'] . "\nĐã hoàn " . ($packageId ? '1 lượt gói' : money($price)) . ' vào tài khoản.'];
         }
 
         $id = DB::insert('orders', [
@@ -67,6 +72,8 @@ final class OrderService
             'price' => $price,
             'cost' => $service['cost'],
             'status' => 'pending',
+            'kind' => $kind,
+            'user_package_id' => $packageId,
             'network' => $opts['network'] ?? null,
             'expires_at' => date('Y-m-d H:i:s', time() + Settings::int('order_timeout')),
             'created_at' => now(),
@@ -81,7 +88,7 @@ final class OrderService
         $t = "📱 <b>Đơn #{$o['id']}</b> — " . tg_escape($o['service_name']) . "\n"
             . "Số điện thoại: <code>" . tg_escape($o['phone']) . "</code>\n"
             . ($o['network'] ? 'Nhà mạng: ' . tg_escape($o['network']) . "\n" : '')
-            . "Giá: <b>" . money($o['price']) . "</b>\n"
+            . 'Giá: <b>' . (!empty($o['user_package_id']) ? '1 lượt gói' : money($o['price'])) . "</b>\n"
             . "Trạng thái: " . ($icons[$o['status']] ?? $o['status']) . "\n";
         if ($o['otp']) {
             $t .= "\n🔑 OTP: <code>" . tg_escape($o['otp']) . "</code>\n";
@@ -102,7 +109,10 @@ final class OrderService
         }
         if ($o['status'] === 'pending') {
             $left = max(0, strtotime($o['expires_at']) - time());
-            $t .= "\n⏱ Còn lại: " . floor($left / 60) . " phút " . ($left % 60) . " giây\n<i>OTP sẽ tự động gửi về khi có.</i>";
+            $t .= "\n⏱ Còn lại: " . floor($left / 60) . ' phút ' . ($left % 60) . " giây\n"
+                . (($o['kind'] ?? 'otp') === 'sms' && !$o['sms_sent']
+                    ? '<i>👇 Bấm nút bên dưới để gửi tin nhắn từ số này (mỗi số gửi được 1 lần).</i>'
+                    : '<i>OTP sẽ tự động gửi về khi có.</i>');
         }
         return $t;
     }
@@ -114,9 +124,6 @@ final class OrderService
 
     public static function orderKeyboard(array $o): ?array
     {
-        if (($o['kind'] ?? 'otp') === 'sms') {
-            return null;
-        }
         if ($o['status'] === 'pending') {
             $rows = [];
             $svc = DB::row('SELECT * FROM services WHERE id = ?', [$o['service_id']]);
@@ -134,6 +141,9 @@ final class OrderService
             }
             $rows[] = $row;
             return Telegram::inline($rows);
+        }
+        if ($o['status'] === 'success' && ($o['kind'] ?? 'otp') === 'sms') {
+            return Telegram::inline([[Telegram::btn('✉️ Thuê số mới gửi tiếp', 'smss:' . $o['service_id'])]]);
         }
         if ($o['status'] === 'success') {
             $row = [Telegram::btn('🔁 Thuê lại dịch vụ', 'buy:' . $o['service_id'])];
@@ -224,11 +234,16 @@ final class OrderService
             return false;
         }
         $this->api->cancel((string)$o['provider_order_id']);
-        $after = Wallet::change((int)$o['user_id'], (float)$o['price'], 'refund', "Hoàn tiền đơn #{$o['id']}: $reason");
-        $updated = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
-        $this->notify($updated);
         $tgId = DB::value('SELECT tg_id FROM users WHERE id = ?', [$o['user_id']]);
-        $this->tg->send($tgId, "↩️ Đơn #{$o['id']} ({$reason}). Đã hoàn <b>" . money($o['price']) . '</b>. Số dư: <b>' . money($after) . '</b>');
+        if (!empty($o['user_package_id'])) {
+            SmsService::returnCredit((int)$o['user_package_id']);
+            $refundText = '1 lượt gói tin';
+        } else {
+            $after = Wallet::change((int)$o['user_id'], (float)$o['price'], 'refund', "Hoàn tiền đơn #{$o['id']}: $reason");
+            $refundText = money($o['price']) . '</b>. Số dư: <b>' . money($after);
+        }
+        $this->notify(DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]));
+        $this->tg->send($tgId, "↩️ Đơn #{$o['id']} ({$reason}). Đã hoàn <b>" . $refundText . '</b>');
         return true;
     }
 
@@ -272,7 +287,7 @@ final class OrderService
     public function pollAll(): int
     {
         $count = 0;
-        foreach (DB::all("SELECT * FROM orders WHERE status = 'pending' AND kind = 'otp' ORDER BY id") as $o) {
+        foreach (DB::all("SELECT * FROM orders WHERE status = 'pending' ORDER BY id") as $o) {
             try {
                 $this->poll($o);
                 $count++;

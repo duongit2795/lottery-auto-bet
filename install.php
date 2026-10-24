@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         DB::init($config);
         DB::migrate();
-        Settings::set('db_version', '6');
+        Settings::set('db_version', '7');
         DB::insert('admins', ['username' => $user, 'password_hash' => password_hash($pass, PASSWORD_DEFAULT), 'created_at' => now()]);
         foreach (['bot_token', 'api_key', 'shop_name', 'admin_tg_ids'] as $k) {
             if (trim($_POST[$k] ?? '') !== '') {
