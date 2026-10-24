@@ -33,33 +33,9 @@ if (isset($body['data']) && is_array($body['data'])) { // Casso
     }
 }
 
-$prefix = preg_quote((string)Settings::get('deposit_prefix'), '/');
 $done = 0;
 foreach ($txs as $t) {
-    if ($t['amount'] <= 0 || !preg_match('/' . $prefix . '\s*([A-Z0-9]{6})/i', $t['content'], $m)) {
-        continue;
-    }
-    $user = DB::row('SELECT * FROM users WHERE deposit_code = ?', [strtoupper($m[1])]);
-    if (!$user || DB::value('SELECT 1 FROM deposits WHERE ref = ?', [$t['ref']])) {
-        continue;
-    }
-    // Nếu user đã bấm "Tôi đã chuyển khoản" thì dùng luôn yêu cầu đó
-    $depId = DB::value("SELECT id FROM deposits WHERE user_id = ? AND status = 'pending' AND method = 'manual' ORDER BY id DESC", [$user['id']]);
-    if ($depId) {
-        DB::update('deposits', ['ref' => $t['ref'], 'method' => 'auto', 'note' => mb_substr($t['content'], 0, 250)], 'id = ?', [$depId]);
-    } else {
-        $depId = DB::insert('deposits', [
-            'user_id' => $user['id'],
-            'amount' => $t['amount'],
-            'method' => 'auto',
-            'ref' => $t['ref'],
-            'note' => mb_substr($t['content'], 0, 250),
-            'status' => 'pending',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
-    if (Wallet::approveDeposit((int)$depId, $t['amount'])) {
+    if ($t['amount'] > 0 && Wallet::creditBankTransfer($t['ref'], $t['content'], $t['amount'])) {
         $done++;
     }
 }

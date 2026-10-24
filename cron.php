@@ -32,6 +32,12 @@ for ($i = 0; $i < $loops; $i++) {
     $start = time();
     $n = $svc->pollAll();
     echo '[' . now() . "] Đã kiểm tra $n đơn\n";
+    if (BankSync::enabled()) {
+        $b = BankSync::sync();
+        if ($b['new'] || !$b['ok']) {
+            echo '[' . now() . '] Ngân hàng: ' . $b['message'] . "\n";
+        }
+    }
     if (Settings::get('sms_enabled') === '1') {
         $m = $sms->processQueue(max(1, (int)floor($interval / 2)));
         echo '[' . now() . "] Đã gửi/xử lý $m tin nhắn\n";

@@ -291,6 +291,16 @@ final class DB
                 created_at DATETIME,
                 updated_at DATETIME
             )$tail",
+            "CREATE TABLE IF NOT EXISTS bank_tx (
+                ref VARCHAR(128) PRIMARY KEY,
+                amount DECIMAL(15,0) NOT NULL DEFAULT 0,
+                content VARCHAR(255),
+                tx_time VARCHAR(40),
+                status VARCHAR(20) NOT NULL,
+                user_id INT,
+                deposit_id INT,
+                created_at DATETIME
+            )$tail",
             "CREATE TABLE IF NOT EXISTS broadcasts (
                 id $pk,
                 message $text,

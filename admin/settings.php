@@ -40,6 +40,8 @@ $groups = [
         ['deposit_prefix', 'Tiền tố nội dung CK', 'text', 'Nội dung = tiền tố + mã 6 ký tự của user (vd: NAPAB12CD)'],
         ['min_deposit', 'Nạp tối thiểu', 'number', ''],
         ['deposit_bonus_percent', 'Khuyến mãi nạp (%)', 'number', ''],
+        ['bank_api_url', 'Link API lịch sử giao dịch (Web2M)', 'password', 'Dán link dạng https://api.web2m.com/historyapi.../MậtKhẩu/SốTK/Token. Bot quét mỗi ~20 giây (cần cron), thấy giao dịch có mã nạp sẽ tự cộng tiền. Lần đầu chỉ ghi nhận giao dịch cũ, không cộng. Bấm "Kiểm tra API ngân hàng" ở đầu trang để thử'],
+        ['bank_api_interval', 'Quét lịch sử mỗi (giây)', 'number', 'Tối thiểu 5. Đừng đặt quá thấp để tránh bị Web2M giới hạn'],
         ['payment_webhook_key', 'Key webhook SePay/Casso', 'text', ''],
     ],
     '✉️ Gửi tin nhắn' => [
@@ -102,6 +104,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash('Token không hợp lệ: ' . h($me['description'] ?? ''), 'danger');
         }
+    } elseif ($action === 'check_bank') {
+        $r = BankSync::fetch();
+        if (!$r['ok']) {
+            flash('❌ API ngân hàng: ' . h($r['message']) . ($r['raw'] !== '' ? '<pre class="small mt-2 mb-0" style="white-space:pre-wrap">' . h(mb_substr($r['raw'], 0, 800)) . '</pre>' : ''), 'danger');
+        } else {
+            $in = array_values(array_filter($r['txs'], fn($t) => $t['in']));
+            $lines = array_map(fn($t) => h(($t['time'] ?: '?') . ' | +' . money($t['amount']) . ' | ' . mb_substr($t['content'], 0, 80) . (($u = Wallet::userFromTransferContent($t['content'])) ? ' → user ' . $u['tg_id'] : '')), array_slice($in, 0, 5));
+            flash('✅ Đọc được <b>' . count($r['txs']) . '</b> giao dịch (' . count($in) . ' tiền vào). 5 giao dịch tiền vào gần nhất:<br><small>' . (implode('<br>', $lines) ?: 'không có') . '</small>'
+                . '<details class="mt-2"><summary class="small">Dữ liệu gốc</summary><pre class="small" style="white-space:pre-wrap">' . h(mb_substr($r['raw'], 0, 1500)) . '</pre></details>');
+        }
+    } elseif ($action === 'sync_bank') {
+        $r = BankSync::sync(true);
+        flash(h($r['message']), $r['ok'] ? 'success' : 'danger');
     } elseif ($action === 'check_api') {
         $r = (new OtpProvider())->request('balance');
         $bal = (new OtpProvider())->balance();
@@ -135,6 +150,8 @@ layout_start('Cài đặt');
         <?= csrf_field() ?>
         <button name="action" value="check_bot" class="btn btn-outline-primary btn-sm">Kiểm tra bot</button>
         <button name="action" value="check_api" class="btn btn-outline-primary btn-sm">Kiểm tra API key</button>
+        <button name="action" value="check_bank" class="btn btn-outline-success btn-sm">Kiểm tra API ngân hàng</button>
+        <button name="action" value="sync_bank" class="btn btn-outline-success btn-sm">Quét nạp tiền ngay</button>
         <button name="action" value="set_webhook" class="btn btn-primary btn-sm">Đặt webhook → <?= h(base_url()) ?>/webhook.php</button>
         <button name="action" value="delete_webhook" class="btn btn-outline-danger btn-sm">Xóa webhook (dùng polling)</button>
     </form>

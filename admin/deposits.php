@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             (new Telegram())->send($tgId, "❌ Yêu cầu nạp #$id bị từ chối. Liên hệ " . tg_escape(Settings::get('support_contact')) . ' nếu có thắc mắc.');
             flash("Đã từ chối #$id.");
         }
+    } elseif ($action === 'assign') {
+        $u = DB::row('SELECT * FROM users WHERE CAST(tg_id AS CHAR) = ? OR deposit_code = ?', [trim($_POST['user']), strtoupper(str_ireplace((string)Settings::get('deposit_prefix'), '', trim($_POST['user'])))]);
+        $ok = $u && BankSync::assign((string)$_POST['ref'], $u);
+        flash($ok ? 'Đã cộng tiền giao dịch cho ' . h($u['tg_id']) . '.' : 'Không gán được (sai user hoặc giao dịch đã xử lý).', $ok ? 'success' : 'danger');
+    } elseif ($action === 'sync_bank') {
+        $r = BankSync::sync(true);
+        flash(h($r['message']), $r['ok'] ? 'success' : 'danger');
     } elseif ($action === 'manual') {
         $q = trim($_POST['user']);
         $u = DB::row('SELECT * FROM users WHERE CAST(tg_id AS CHAR) = ? OR deposit_code = ?', [$q, strtoupper(str_ireplace((string)Settings::get('deposit_prefix'), '', $q))]);
@@ -90,5 +97,44 @@ layout_start('Nạp tiền');
         <div class="form-text">Khuyến mãi nạp (<?= h(Settings::get('deposit_bonus_percent')) ?>%) được cộng tự động.</div>
     </form>
 </div>
+</div>
+
+<?php $bank = DB::all('SELECT t.*, u.tg_id, u.username FROM bank_tx t LEFT JOIN users u ON u.id = t.user_id ORDER BY t.created_at DESC LIMIT 50'); ?>
+<div class="card card-body mt-3">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <h6 class="mb-0">🏦 Giao dịch ngân hàng (nạp tự động)</h6>
+        <?php if (BankSync::enabled()): ?>
+            <span class="small text-muted">Quét lần cuối OK: <?= h(Settings::get('bank_api_last_ok') ?: '—') ?></span>
+            <form method="post" class="ms-auto"><?= csrf_field() ?><button name="action" value="sync_bank" class="btn btn-sm btn-outline-success">🔄 Quét ngay</button></form>
+        <?php else: ?>
+            <span class="small">Chưa bật — nhập link API Web2M ở <a href="settings.php">Cài đặt → Nạp tiền</a>.</span>
+        <?php endif; ?>
+    </div>
+    <?php if ($err = Settings::get('bank_api_last_error')): ?><div class="alert alert-danger py-1 small">Lỗi gần nhất: <?= h($err) ?></div><?php endif; ?>
+    <div class="table-responsive"><table class="table table-sm">
+        <tr><th>Thời gian GD</th><th class="text-end">Số tiền</th><th>Nội dung</th><th>Kết quả</th><th></th></tr>
+        <?php
+        $labels = ['credited' => ['Đã cộng', 'success'], 'unmatched' => ['Không có mã nạp', 'warning'], 'too_small' => ['Dưới mức tối thiểu', 'warning'],
+            'baseline' => ['GD cũ (bỏ qua)', 'secondary'], 'out' => ['Tiền ra', 'light'], 'duplicate' => ['Đã xử lý trước đó', 'secondary'], 'processing' => ['Đang xử lý', 'info']];
+        foreach ($bank as $t): [$l, $c] = $labels[$t['status']] ?? [$t['status'], 'light']; ?>
+            <tr>
+                <td class="small"><?= h($t['tx_time'] ?: $t['created_at']) ?></td>
+                <td class="text-end fw-semibold"><?= money($t['amount']) ?></td>
+                <td class="small" style="max-width:260px"><?= h($t['content']) ?></td>
+                <td><span class="badge text-bg-<?= $c ?>"><?= $l ?></span><?php if ($t['tg_id']): ?> <a class="small" href="users.php?id=<?= (int)$t['user_id'] ?>"><?= h($t['username'] ? '@' . $t['username'] : $t['tg_id']) ?></a><?php endif; ?></td>
+                <td>
+                    <?php if (in_array($t['status'], ['unmatched', 'too_small'], true)): ?>
+                        <form method="post" class="input-group input-group-sm" style="min-width:200px" onsubmit="return confirm('Cộng <?= money($t['amount']) ?> cho user này?')">
+                            <?= csrf_field() ?><input type="hidden" name="action" value="assign"><input type="hidden" name="ref" value="<?= h($t['ref']) ?>">
+                            <input name="user" class="form-control" placeholder="TG ID / mã nạp" required>
+                            <button class="btn btn-outline-primary">Cộng</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if (!$bank): ?><tr><td colspan="5" class="text-muted small">Chưa có giao dịch.</td></tr><?php endif; ?>
+    </table></div>
+    <div class="form-text">Khách chuyển khoản sai/thiếu nội dung → giao dịch hiện "Không có mã nạp", nhập Telegram ID của khách và bấm Cộng.</div>
 </div>
 <?php layout_end();

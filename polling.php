@@ -32,6 +32,9 @@ while (true) {
     }
     if (time() - $lastPoll >= 10) {
         $orders->pollAll();
+        if (BankSync::enabled()) {
+            BankSync::sync();
+        }
         if (Settings::get('sms_enabled') === '1') {
             $sms->processQueue(5);
         }

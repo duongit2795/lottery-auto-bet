@@ -28,6 +28,45 @@ final class Wallet
         });
     }
 
+    /** Tìm user theo mã nạp trong nội dung chuyển khoản (vd: NAPAB12CD). */
+    public static function userFromTransferContent(string $content): ?array
+    {
+        $prefix = preg_quote((string)Settings::get('deposit_prefix'), '/');
+        if (!preg_match('/' . $prefix . '\s*([A-Z0-9]{6})/i', $content, $m)) {
+            return null;
+        }
+        return DB::row('SELECT * FROM users WHERE deposit_code = ?', [strtoupper($m[1])]);
+    }
+
+    /**
+     * Cộng tiền từ 1 giao dịch ngân hàng (SePay, Casso, Web2M...). $ref là mã giao dịch duy nhất
+     * để không cộng 2 lần. Trả về id yêu cầu nạp đã duyệt, hoặc null nếu không khớp / đã xử lý.
+     */
+    public static function creditBankTransfer(string $ref, string $content, float $amount, ?array $user = null): ?int
+    {
+        $user = $user ?? self::userFromTransferContent($content);
+        if (!$user || $amount <= 0 || DB::value('SELECT 1 FROM deposits WHERE ref = ?', [$ref])) {
+            return null;
+        }
+        // Nếu user đã bấm "Tôi đã chuyển khoản" thì dùng luôn yêu cầu đó
+        $depId = DB::value("SELECT id FROM deposits WHERE user_id = ? AND status = 'pending' AND method = 'manual' ORDER BY id DESC", [$user['id']]);
+        if ($depId) {
+            DB::update('deposits', ['ref' => $ref, 'method' => 'auto', 'note' => mb_substr($content, 0, 250)], 'id = ?', [$depId]);
+        } else {
+            $depId = DB::insert('deposits', [
+                'user_id' => $user['id'],
+                'amount' => $amount,
+                'method' => 'auto',
+                'ref' => $ref,
+                'note' => mb_substr($content, 0, 250),
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+        return self::approveDeposit((int)$depId, $amount) ? (int)$depId : null;
+    }
+
     /** Duyệt một yêu cầu nạp tiền (dùng cho admin & webhook ngân hàng). Trả về false nếu đã xử lý. */
     public static function approveDeposit(int $depositId, ?float $realAmount = null): bool
     {
