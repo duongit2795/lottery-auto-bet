@@ -20,6 +20,9 @@ final class Settings
             'maintenance' => '0',
             'maintenance_message' => '🛠 Bot đang bảo trì, vui lòng quay lại sau.',
 
+            // Tự động hóa (kiểm tra OTP, hoàn tiền hết hạn, quét nạp tiền) — không cần cron
+            'auto_worker' => '1',
+
             // Mini App (mở trong Telegram, chạy song song với bot)
             'miniapp_enabled' => '1',
             'miniapp_url' => '',            // trống = tự điền https://<tên miền>/app/ khi bấm "Kiểm tra bot"

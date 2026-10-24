@@ -2,6 +2,15 @@
 require __DIR__ . '/_init.php';
 require_login();
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restart_worker') {
+    check_csrf();
+    Settings::set('auto_worker', '1');
+    @unlink(APP_ROOT . '/data/last_kick');
+    $ok = Scheduler::spawn();
+    flash($ok ? 'Đã khởi động tiến trình tự động. Tải lại trang sau vài giây để xem trạng thái.' : 'Không khởi động được — xem hướng dẫn trong ô Tự động hóa.', $ok ? 'success' : 'danger');
+    redirect('index.php');
+}
+
 $today = date('Y-m-d 00:00:00');
 $month = date('Y-m-01 00:00:00');
 $sum = fn(string $col, string $from) => (float)DB::value("SELECT COALESCE(SUM($col),0) FROM orders WHERE status = 'success' AND created_at >= ?", [$from]);
@@ -32,7 +41,68 @@ $top = DB::all("SELECT service_name, COUNT(*) c, SUM(price) s FROM orders WHERE 
 $recent = DB::all('SELECT o.*, u.tg_id, u.username FROM orders o LEFT JOIN users u ON u.id = o.user_id ORDER BY o.id DESC LIMIT 10');
 
 layout_start('Tổng quan');
+$last = Scheduler::lastTick();
+$ago = $last ? time() - $last : null;
 ?>
+<?php
+$cron = Scheduler::lastCron();
+$cronAgo = $cron['time'] ? time() - $cron['time'] : null;
+$cronOk = $cronAgo !== null && $cronAgo < 150;
+$cronCmd = 'php ' . APP_ROOT . '/cron.php';
+$cronUrl = rtrim((string)Settings::get('site_url'), '/') . '/cron.php?secret=' . cfg('secret');
+?>
+<div class="row g-3 mb-3">
+    <div class="col-lg-6">
+        <div class="card card-body h-100 border-start border-4 border-<?= Scheduler::alive() ? 'success' : 'danger' ?>">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <b>⚙️ Tiến trình tự động</b>
+                <?php if (!Scheduler::enabled()): ?><span class="badge text-bg-secondary">Đã tắt</span>
+                <?php elseif (Scheduler::alive()): ?><span class="badge text-bg-success">Đang chạy</span>
+                <?php else: ?><span class="badge text-bg-danger">Đang dừng</span><?php endif; ?>
+                <form method="post" class="ms-auto"><?= csrf_field() ?><button name="action" value="restart_worker" class="btn btn-sm btn-outline-primary">🔄 Khởi động lại</button></form>
+            </div>
+            <div class="small text-muted">Lần chạy gần nhất: <b><?= $ago === null ? 'chưa chạy' : $ago . ' giây trước' ?></b></div>
+            <div class="small text-muted">Tự kiểm tra OTP, hoàn tiền đơn hết hạn, đóng đơn gửi tin, quét nạp tiền — mỗi 5 giây khi có đơn đang chờ. Không cần cron, tự khởi động lại khi có người dùng bot/app.</div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card card-body h-100 border-start border-4 border-<?= $cronOk ? 'success' : ($cronAgo === null ? 'warning' : 'danger') ?>">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <b>⏰ Cron (dự phòng)</b>
+                <?php if ($cronOk): ?><span class="badge text-bg-success">Đang hoạt động</span>
+                <?php elseif ($cronAgo === null): ?><span class="badge text-bg-warning">Chưa cài</span>
+                <?php else: ?><span class="badge text-bg-danger">Đã dừng</span><?php endif; ?>
+            </div>
+            <div class="small text-muted">Lần chạy gần nhất: <b><?= $cronAgo === null ? 'chưa từng chạy' : ($cronAgo < 120 ? $cronAgo . ' giây trước' : round($cronAgo / 60) . ' phút trước') ?></b><?= $cron['via'] ? ' (' . ($cron['via'] === 'cli' ? 'lệnh Shell' : 'gọi URL') . ')' : '' ?></div>
+            <?php if (!$cronOk): ?>
+                <div class="small mt-1"><?= $cronAgo === null ? 'Nên cài cron để bot vẫn tự chạy cả khi không có ai dùng bot/app.' : '⚠️ Cron đã ngừng chạy hơn 2 phút — kiểm tra lại tác vụ cron trong aaPanel.' ?>
+                    <a href="#cronGuide" data-bs-toggle="collapse">Xem hướng dẫn cài</a></div>
+            <?php else: ?>
+                <div class="small text-muted">Cron chạy mỗi phút, kết hợp tiến trình tự động để không bỏ sót đơn nào.</div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<div class="collapse <?= $cronAgo === null ? '' : '' ?> mb-3" id="cronGuide">
+    <div class="card card-body small">
+        <h6>📘 Cài cron trên aaPanel (làm 1 lần, dùng điện thoại được)</h6>
+        <ol class="mb-2">
+            <li>Mở aaPanel → menu <b>Cron</b> (Tác vụ định kỳ) → <b>Add Task</b>.</li>
+            <li><b>Type of Task</b>: chọn <b>Shell Script</b>.</li>
+            <li><b>Name</b>: <code>simbot</code>.</li>
+            <li><b>Period</b>: chọn <b>N Minutes</b>, điền <b>1</b> (chạy mỗi phút).</li>
+            <li><b>Script content</b>: dán dòng dưới rồi bấm <b>Add Task</b>:
+                <div class="input-group input-group-sm mt-1"><input class="form-control font-monospace" readonly value="<?= h($cronCmd) ?>" id="cronCmd"><button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('cronCmd').value);this.innerText='Đã chép'">Chép</button></div>
+                <div class="text-muted">Nếu báo không tìm thấy <code>php</code>, dùng đường dẫn đầy đủ, vd: <code>/www/server/php/83/bin/php <?= h(APP_ROOT) ?>/cron.php</code> (83 = PHP 8.3, đổi theo bản PHP của site).</div>
+            </li>
+            <li>Bấm <b>Execute</b> ở tác vụ vừa tạo để chạy thử, rồi quay lại trang này: ô Cron chuyển <span class="badge text-bg-success">Đang hoạt động</span> là xong.</li>
+        </ol>
+        <div><b>Cách khác — không có quyền Shell:</b> chọn Type <b>Access URL</b> (hoặc dùng dịch vụ miễn phí cron-job.org), gọi mỗi phút URL:
+            <div class="input-group input-group-sm mt-1"><input class="form-control font-monospace" readonly value="<?= h($cronUrl) ?>" id="cronUrl"><button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('cronUrl').value);this.innerText='Đã chép'">Chép</button></div>
+            <div class="text-danger">Không chia sẻ URL này cho người khác (chứa mã bí mật).</div>
+        </div>
+    </div>
+</div>
 <?php if (!Settings::get('bot_token') || !Settings::get('api_key')): ?>
     <div class="alert alert-warning">⚠️ Chưa cấu hình đủ <b>Bot token</b> / <b>API key</b>. Vào <a href="settings.php">Cài đặt</a> và <a href="api.php">API nhà cung cấp</a>.</div>
 <?php endif; ?>

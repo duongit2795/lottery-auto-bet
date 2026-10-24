@@ -36,6 +36,7 @@ require_once APP_ROOT . '/src/SmsService.php';
 require_once APP_ROOT . '/src/Bot.php';
 require_once APP_ROOT . '/src/Updater.php';
 require_once APP_ROOT . '/src/BankSync.php';
+require_once APP_ROOT . '/src/Scheduler.php';
 
 DB::init($GLOBALS['config']);
 

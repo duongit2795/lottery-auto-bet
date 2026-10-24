@@ -56,6 +56,9 @@ $groups = [
         ['referral_percent', 'Hoa hồng giới thiệu (%)', 'number', 'Tính trên giá mỗi đơn thành công của người được giới thiệu'],
         ['bot_username', 'Username bot (không có @)', 'text', 'Dùng tạo link giới thiệu. Tự điền khi bấm "Kiểm tra bot"'],
     ],
+    '⚙️ Tự động hóa' => [
+        ['auto_worker', 'Tiến trình tự động (không cần cron)', 'bool', 'Tự kiểm tra OTP, hoàn tiền đơn hết hạn, quét nạp tiền. Tự khởi động lại khi có người dùng bot/app/admin. Trạng thái xem ở trang Tổng quan'],
+    ],
     '📲 Mini App' => [
         ['miniapp_enabled', 'Bật Mini App', 'bool', 'Ứng dụng mở ngay trong Telegram, dùng chung số dư/đơn hàng với bot. Sau khi đổi, bấm "Kiểm tra bot" để cập nhật nút menu'],
         ['miniapp_url', 'Link Mini App', 'text', 'Để trống = tự điền https://tên-miền/app/ khi bấm "Kiểm tra bot". Bắt buộc https'],

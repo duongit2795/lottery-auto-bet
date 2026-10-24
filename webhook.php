@@ -21,3 +21,7 @@ if (function_exists('fastcgi_finish_request')) {
     fastcgi_finish_request();
 }
 (new Bot())->handle($update);
+
+// Giữ cho tiến trình tự động (kiểm tra OTP, hoàn tiền) luôn chạy
+Scheduler::rememberSiteUrl();
+Scheduler::kick();

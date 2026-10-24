@@ -117,6 +117,8 @@ if (!$tgUser) {
     fail('Phiên không hợp lệ. Hãy mở ứng dụng từ trong Telegram.', 401);
 }
 $user = Bot::registerUser($tgUser, $tgUser['start_param'] ?? null);
+Scheduler::rememberSiteUrl();
+Scheduler::kickAfterResponse();
 if ($user['is_banned']) {
     fail('Tài khoản của bạn đã bị khóa. Liên hệ ' . Settings::get('support_contact'), 403);
 }

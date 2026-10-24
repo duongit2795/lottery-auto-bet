@@ -71,6 +71,13 @@ PHP ≥ 8.0, có các extension `curl`, `pdo_sqlite` (hoặc `pdo_mysql`), `mbst
 2. Ở `install.php` chọn **MySQL**: Host là IP hoặc tên miền của máy database, điền port, tên database, user và mật khẩu. Database đám mây (Aiven, TiDB Cloud, PlanetScale, ...) cần tick thêm **Kết nối SSL**.
 3. Bảng dữ liệu được tạo tự động. Có thể kiểm tra kết nối trước bằng lệnh `mysql -h HOST -P 3306 -u USER -p` chạy trên hosting.
 
+### Tự động hóa (không bắt buộc cron)
+Bot tự kiểm tra OTP, hoàn tiền đơn hết hạn, đóng đơn gửi tin và quét nạp tiền bằng tiến trình nền `worker.php`. Tiến trình này tự gọi lại chính nó, và tự khởi động lại khi có người dùng bot, Mini App hoặc vào admin. Trạng thái xem ở **Admin → Tổng quan**.
+
+**Cron là lớp dự phòng nên cài**, để bot vẫn tự chạy cả khi không có ai dùng. Cách cài trên aaPanel:
+**Cron → Add Task → Shell Script → mỗi 1 phút**, nội dung `php /đường-dẫn/cron.php`.
+Trang Tổng quan có hướng dẫn chi tiết, nút chép lệnh, và báo trạng thái cron: đang hoạt động / chưa cài / đã dừng.
+
 ### Chạy không cần webhook (VPS / máy cá nhân)
 ```
 php polling.php

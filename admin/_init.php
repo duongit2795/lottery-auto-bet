@@ -11,6 +11,9 @@ if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(16));
 }
 
+Scheduler::rememberSiteUrl(true);
+Scheduler::kickAfterResponse();
+
 function require_login(): void
 {
     if (empty($_SESSION['admin_id'])) {

@@ -20,7 +20,6 @@ if (empty($me['ok'])) {
 echo 'Bot @' . $me['result']['username'] . " đang chạy (polling)...\n";
 
 $bot = new Bot();
-$orders = new OrderService();
 $offset = 0;
 $lastPoll = 0;
 while (true) {
@@ -30,10 +29,7 @@ while (true) {
         $bot->handle($u);
     }
     if (time() - $lastPoll >= 10) {
-        $orders->pollAll();
-        if (BankSync::enabled()) {
-            BankSync::sync();
-        }
+        Scheduler::tick();
         $lastPoll = time();
     }
     if (empty($res['ok'])) {
