@@ -38,6 +38,12 @@ final class Bot
 
     private function loadUser(array $from, ?string $refArg = null): array
     {
+        return self::registerUser($from, $refArg);
+    }
+
+    /** Tạo hoặc cập nhật user từ dữ liệu Telegram (dùng chung cho bot và Mini App). */
+    public static function registerUser(array $from, ?string $refArg = null): array
+    {
         $u = DB::row('SELECT * FROM users WHERE tg_id = ?', [$from['id']]);
         if (!$u) {
             $refBy = null;
@@ -57,7 +63,7 @@ final class Bot
                 'last_active' => now(),
             ]);
             if ($refBy) {
-                $this->tg->send($refBy, '👥 Có người mới tham gia qua link giới thiệu của bạn: ' . tg_escape($from['first_name'] ?? ''));
+                (new Telegram())->send($refBy, '👥 Có người mới tham gia qua link giới thiệu của bạn: ' . tg_escape($from['first_name'] ?? ''));
             }
         } else {
             DB::update('users', ['username' => $from['username'] ?? null, 'first_name' => mb_substr($from['first_name'] ?? '', 0, 120), 'last_active' => now()], 'id = ?', [$u['id']]);
@@ -76,15 +82,23 @@ final class Bot
         $this->user['state'] = $state;
     }
 
+    /** Link Mini App nếu đã bật (phải là https). */
+    public static function miniAppUrl(): ?string
+    {
+        $url = trim((string)Settings::get('miniapp_url'));
+        return Settings::get('miniapp_enabled') === '1' && str_starts_with($url, 'https://') ? $url : null;
+    }
+
     private function mainKeyboard(): array
     {
+        $app = self::miniAppUrl();
         return [
-            'keyboard' => [
+            'keyboard' => array_merge($app ? [[['text' => '📲 Mở ứng dụng', 'web_app' => ['url' => $app]]]] : [], [
                 [['text' => self::BTN_RENT], ['text' => self::BTN_SMS]],
                 [['text' => self::BTN_DEPOSIT], ['text' => self::BTN_PKG]],
                 [['text' => self::BTN_ACCOUNT], ['text' => self::BTN_HISTORY]],
                 [['text' => self::BTN_PRICES], ['text' => self::BTN_REF], ['text' => self::BTN_SUPPORT]],
-            ],
+            ]),
             'resize_keyboard' => true,
         ];
     }
@@ -125,6 +139,9 @@ final class Bot
                 $this->setState(null);
                 $welcome = str_replace('{shop}', tg_escape(Settings::get('shop_name')), (string)Settings::get('welcome_message'));
                 $this->tg->send($chat, $welcome . "\n\nSố dư: <b>" . money($this->user['balance']) . "</b>\nChọn chức năng bên dưới 👇", $this->mainKeyboard());
+                if ($app = self::miniAppUrl()) {
+                    $this->tg->send($chat, '📲 Hoặc dùng <b>ứng dụng</b> ngay trong Telegram — giao diện dễ dùng, đầy đủ tính năng:', Telegram::inline([[['text' => '📲 Mở ứng dụng', 'web_app' => ['url' => $app]]]]));
+                }
                 return;
             case $text === self::BTN_RENT || $cmd === '/thuesim':
                 $this->setState(null);
@@ -622,25 +639,14 @@ final class Bot
         $this->tg->send($chat, $text . "\n\nChọn số tiền muốn nạp:", Telegram::inline($kb));
     }
 
-    private function depositMemo(): string
-    {
-        return Settings::get('deposit_prefix') . $this->user['deposit_code'];
-    }
-
     private function sendDepositQr($chat, int $amount): void
     {
         if ($amount < Settings::int('min_deposit')) {
             $amount = Settings::int('min_deposit');
         }
-        $memo = $this->depositMemo();
-        $qr = sprintf(
-            'https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s',
-            rawurlencode((string)Settings::get('bank_bin')),
-            rawurlencode((string)Settings::get('bank_account')),
-            $amount,
-            rawurlencode($memo),
-            rawurlencode((string)Settings::get('bank_owner'))
-        );
+        $info = Wallet::depositInfo($this->user, $amount);
+        $memo = $info['memo'];
+        $qr = $info['qr'];
         $caption = "🏦 <b>Chuyển khoản ngân hàng</b>\n\n"
             . 'Ngân hàng: <b>' . tg_escape(Settings::get('bank_name')) . "</b>\n"
             . 'Số tài khoản: <code>' . tg_escape(Settings::get('bank_account')) . "</code>\n"
@@ -657,29 +663,10 @@ final class Bot
 
     private function depositClaim(array $cb, $chat, int $amount): void
     {
-        $exists = DB::value("SELECT id FROM deposits WHERE user_id = ? AND status = 'pending' AND method = 'manual'", [$this->user['id']]);
-        if ($exists) {
-            $this->tg->answer($cb['id'], 'Bạn đã có yêu cầu đang chờ duyệt. Vui lòng đợi admin kiểm tra.', true);
-            return;
-        }
-        $id = DB::insert('deposits', [
-            'user_id' => $this->user['id'],
-            'amount' => $amount,
-            'method' => 'manual',
-            'note' => 'Người dùng báo đã chuyển: ' . $this->depositMemo(),
-            'status' => 'pending',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $this->tg->answer($cb['id'], 'Đã gửi yêu cầu, admin sẽ kiểm tra sớm!', true);
-        $this->tg->send($chat, "📨 Yêu cầu nạp #$id (" . money($amount) . ') đã được gửi. Bạn sẽ nhận thông báo khi được duyệt.');
-
-        $u = $this->user;
-        $text = "💵 <b>Yêu cầu nạp tiền #$id</b>\nUser: " . tg_escape($u['first_name']) . ($u['username'] ? ' @' . tg_escape($u['username']) : '') . " (<code>{$u['tg_id']}</code>)\n"
-            . 'Số tiền: <b>' . money($amount) . "</b>\nNội dung CK: <code>" . tg_escape($this->depositMemo()) . '</code>';
-        $kb = Telegram::inline([[Telegram::btn('✅ Duyệt', 'adep:ok:' . $id), Telegram::btn('❌ Từ chối', 'adep:no:' . $id)]]);
-        foreach (Settings::adminIds() as $admin) {
-            $this->tg->send($admin, $text, $kb);
+        $r = Wallet::claimDeposit($this->user, $amount);
+        $this->tg->answer($cb['id'], $r['ok'] ? 'Đã gửi yêu cầu, admin sẽ kiểm tra sớm!' : $r['message'], true);
+        if ($r['ok']) {
+            $this->tg->send($chat, $r['message']);
         }
     }
 

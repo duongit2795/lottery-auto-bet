@@ -20,6 +20,10 @@ final class Settings
             'maintenance' => '0',
             'maintenance_message' => '🛠 Bot đang bảo trì, vui lòng quay lại sau.',
 
+            // Mini App (mở trong Telegram, chạy song song với bot)
+            'miniapp_enabled' => '1',
+            'miniapp_url' => '',            // trống = tự điền https://<tên miền>/app/ khi bấm "Kiểm tra bot"
+
             // Giá
             'price_mode' => 'percent',     // percent | fixed
             'price_markup' => '30',        // % hoặc số tiền cộng thêm

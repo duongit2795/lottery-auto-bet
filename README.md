@@ -20,6 +20,15 @@ Bot Telegram bán dịch vụ thuê sim nhận OTP qua API [BossOTP](https://bos
 - 🎁 Giới thiệu bạn bè: hoa hồng % trên mỗi đơn thành công
 - Khuyến mãi % khi nạp, giới hạn số đơn chờ, chống hủy liên tục, chế độ bảo trì
 
+**📲 Mini App** (mở ngay trong Telegram, chạy song song với bot, dùng chung số dư/đơn hàng)
+- Trang chủ: số dư, lượt gói, đơn gần đây
+- Thuê sim: tìm dịch vụ, chọn nhà mạng, theo dõi đơn tự cập nhật mỗi 5 giây, sao chép số/OTP 1 chạm, hủy đơn
+- Gửi tin: thuê số dịch vụ gửi SMS, gửi nhiều lần (SMS tùy chọn / cố định / chuyển tiếp cuộc gọi), lịch sử gửi, kết thúc đơn
+- Nạp tiền: mã QR VietQR, sao chép số TK/nội dung, báo đã chuyển khoản, lịch sử nạp
+- Tài khoản: thông tin, biến động số dư, lịch sử đơn, gói tin nhắn, link giới thiệu
+- Bật trong **Admin → Cài đặt → 📲 Mini App**, rồi bấm **Kiểm tra bot**. Bot sẽ có nút "📲 Mở ứng dụng" trên bàn phím và nút menu "Mở app" cạnh ô chat. Mini App cần tên miền **https**.
+- Bảo mật: mọi request kiểm tra chữ ký `initData` của Telegram bằng bot token, nên không giả mạo được user.
+
 **Lệnh admin trong bot** (với Telegram ID nằm trong cài đặt): `/admin` (thống kê, số dư API), `/cong <id> <tiền>`, `/tru <id> <tiền>`, `/ban <id>`, `/unban <id>`, `/user <id>`, `/thongbao <nội dung>`, `/baotri on|off`
 
 **Trang quản trị `/admin`**

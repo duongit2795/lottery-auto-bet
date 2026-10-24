@@ -173,7 +173,11 @@ final class OrderService
         if ($o['tg_message_id']) {
             $this->tg->edit($tgId, $o['tg_message_id'], $text, $kb);
         } else {
-            $this->tg->send($tgId, $text, $kb);
+            // Đơn tạo từ Mini App: gửi 1 tin trong bot rồi các lần sau sửa tin đó
+            $r = $this->tg->send($tgId, $text, $kb);
+            if (!empty($r['result']['message_id'])) {
+                DB::update('orders', ['tg_message_id' => $r['result']['message_id']], 'id = ?', [$o['id']]);
+            }
         }
     }
 
@@ -183,6 +187,7 @@ final class OrderService
         if ($o['status'] !== 'pending') {
             return $o;
         }
+        DB::update('orders', ['checked_at' => time()], 'id = ?', [$o['id']]);
         $r = $this->api->check((string)$o['provider_order_id']);
         $callsJson = $r['call_logs'] ? json_encode($r['call_logs'], JSON_UNESCAPED_UNICODE) : null;
         if ($callsJson !== null && $callsJson !== $o['call_logs']) {

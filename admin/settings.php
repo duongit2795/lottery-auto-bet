@@ -56,6 +56,10 @@ $groups = [
         ['referral_percent', 'Hoa hồng giới thiệu (%)', 'number', 'Tính trên giá mỗi đơn thành công của người được giới thiệu'],
         ['bot_username', 'Username bot (không có @)', 'text', 'Dùng tạo link giới thiệu. Tự điền khi bấm "Kiểm tra bot"'],
     ],
+    '📲 Mini App' => [
+        ['miniapp_enabled', 'Bật Mini App', 'bool', 'Ứng dụng mở ngay trong Telegram, dùng chung số dư/đơn hàng với bot. Sau khi đổi, bấm "Kiểm tra bot" để cập nhật nút menu'],
+        ['miniapp_url', 'Link Mini App', 'text', 'Để trống = tự điền https://tên-miền/app/ khi bấm "Kiểm tra bot". Bắt buộc https'],
+    ],
 ];
 
 $tg = new Telegram();
@@ -99,7 +103,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ['command' => 'gioithieu', 'description' => 'Giới thiệu bạn bè'],
                 ['command' => 'hotro', 'description' => 'Hỗ trợ'],
             ]]);
-            flash('Bot hoạt động: @' . h($me['result']['username']) . ' (đã cập nhật menu lệnh).');
+            $appNote = '';
+            if (Settings::get('miniapp_enabled') === '1') {
+                if (trim((string)Settings::get('miniapp_url')) === '') {
+                    Settings::set('miniapp_url', base_url() . '/app/');
+                }
+                if ($app = Bot::miniAppUrl()) {
+                    $tg->call('setChatMenuButton', ['menu_button' => ['type' => 'web_app', 'text' => 'Mở app', 'web_app' => ['url' => $app]]]);
+                    $appNote = ' Đã cài nút Mini App: ' . h($app);
+                } else {
+                    $appNote = ' ⚠️ Mini App cần link https — kiểm tra ô "Link Mini App".';
+                }
+            } else {
+                $tg->call('setChatMenuButton', ['menu_button' => ['type' => 'commands']]);
+            }
+            flash('Bot hoạt động: @' . h($me['result']['username']) . ' (đã cập nhật menu lệnh).' . $appNote);
         } else {
             flash('Token không hợp lệ: ' . h($me['description'] ?? ''), 'danger');
         }

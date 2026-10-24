@@ -28,6 +28,54 @@ final class Wallet
         });
     }
 
+    /** Thông tin chuyển khoản + link ảnh VietQR cho user. */
+    public static function depositInfo(array $user, int $amount): array
+    {
+        $amount = max($amount, Settings::int('min_deposit'));
+        $memo = Settings::get('deposit_prefix') . $user['deposit_code'];
+        return [
+            'amount' => $amount,
+            'memo' => $memo,
+            'bank_name' => (string)Settings::get('bank_name'),
+            'bank_account' => (string)Settings::get('bank_account'),
+            'bank_owner' => (string)Settings::get('bank_owner'),
+            'qr' => sprintf(
+                'https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s',
+                rawurlencode((string)Settings::get('bank_bin')),
+                rawurlencode((string)Settings::get('bank_account')),
+                $amount,
+                rawurlencode($memo),
+                rawurlencode((string)Settings::get('bank_owner'))
+            ),
+        ];
+    }
+
+    /** Khách báo "đã chuyển khoản": tạo yêu cầu chờ duyệt và báo admin. */
+    public static function claimDeposit(array $user, int $amount): array
+    {
+        if (DB::value("SELECT id FROM deposits WHERE user_id = ? AND status = 'pending' AND method = 'manual'", [$user['id']])) {
+            return ['ok' => false, 'message' => 'Bạn đã có yêu cầu đang chờ duyệt. Vui lòng đợi admin kiểm tra.'];
+        }
+        $memo = Settings::get('deposit_prefix') . $user['deposit_code'];
+        $id = DB::insert('deposits', [
+            'user_id' => $user['id'],
+            'amount' => $amount,
+            'method' => 'manual',
+            'note' => 'Người dùng báo đã chuyển: ' . $memo,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $text = "💵 <b>Yêu cầu nạp tiền #$id</b>\nUser: " . tg_escape($user['first_name']) . ($user['username'] ? ' @' . tg_escape($user['username']) : '') . " (<code>{$user['tg_id']}</code>)\n"
+            . 'Số tiền: <b>' . money($amount) . "</b>\nNội dung CK: <code>" . tg_escape($memo) . '</code>';
+        $kb = Telegram::inline([[Telegram::btn('✅ Duyệt', 'adep:ok:' . $id), Telegram::btn('❌ Từ chối', 'adep:no:' . $id)]]);
+        $tg = new Telegram();
+        foreach (Settings::adminIds() as $admin) {
+            $tg->send($admin, $text, $kb);
+        }
+        return ['ok' => true, 'id' => $id, 'message' => "📨 Yêu cầu nạp #$id (" . money($amount) . ') đã được gửi. Bạn sẽ nhận thông báo khi được duyệt.'];
+    }
+
     /** Tìm user theo mã nạp trong nội dung chuyển khoản (vd: NAPAB12CD). */
     public static function userFromTransferContent(string $content): ?array
     {
