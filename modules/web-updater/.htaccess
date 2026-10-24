@@ -1,0 +1,6 @@
+# Chỉ cho phép mở index.php; chặn truy cập trực tiếp config, dữ liệu và mã nguồn module
+Options -Indexes
+<FilesMatch "^(config\.php|config\.sample\.php|Updater\.php|README\.md)$">
+    Require all denied
+</FilesMatch>
+RedirectMatch 403 /data/

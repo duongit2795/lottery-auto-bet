@@ -103,6 +103,9 @@ Mỗi lần cập nhật, hệ thống:
 
 Cơ sở dữ liệu tự nâng cấp ở lần chạy đầu sau khi cập nhật. Muốn quay về bản trước, bấm **Khôi phục** ở mục Bản sao lưu. Cần cài extension PHP `zip` (aaPanel: App Store → PHP → Settings → Install extensions → zip) và cấp quyền ghi cho user chạy PHP.
 
+## Module cập nhật dùng lại cho dự án khác
+Thư mục `modules/web-updater/` là phiên bản **độc lập** của chức năng Cập nhật: không cần database, có mật khẩu riêng. Chép sang dự án PHP khác là dùng được. Hướng dẫn chi tiết xem `modules/web-updater/README.md`. Trong repo này, thư mục `modules/` bị chặn truy cập web vì chỉ là bản mẫu.
+
 ## Cấu hình API BossOTP
 Cấu hình mặc định đã khớp với [API v4 của BossOTP](https://bossotp.net/rent-api):
 
