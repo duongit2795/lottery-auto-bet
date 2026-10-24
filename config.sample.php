@@ -10,6 +10,8 @@ return [
     'mysql_db'   => 'simbot',
     'mysql_user' => 'root',
     'mysql_pass' => '',
+    'mysql_ssl'  => false, // true nếu database từ xa yêu cầu SSL
+    'mysql_ssl_ca' => '',  // đường dẫn file CA (trống = dùng CA hệ thống)
 
     // Chuỗi bí mật dùng để xác thực webhook Telegram & cron qua URL
     'secret' => 'change-me-to-a-random-string',

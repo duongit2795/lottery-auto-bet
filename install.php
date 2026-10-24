@@ -21,6 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'mysql_db' => trim($_POST['mysql_db'] ?? ''),
         'mysql_user' => trim($_POST['mysql_user'] ?? ''),
         'mysql_pass' => $_POST['mysql_pass'] ?? '',
+        'mysql_ssl' => isset($_POST['mysql_ssl']),
+        'mysql_ssl_ca' => trim($_POST['mysql_ssl_ca'] ?? ''),
         'secret' => bin2hex(random_bytes(16)),
     ];
     $user = trim($_POST['admin_user'] ?? '');
@@ -74,6 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input name="mysql_db" class="form-control mb-2" placeholder="Tên database">
         <input name="mysql_user" class="form-control mb-2" placeholder="User">
         <input name="mysql_pass" type="password" class="form-control mb-2" placeholder="Mật khẩu">
+        <label class="small mb-1"><input type="checkbox" name="mysql_ssl"> Kết nối SSL (bắt buộc với database đám mây như Aiven, TiDB Cloud, PlanetScale)</label>
+        <input name="mysql_ssl_ca" class="form-control form-control-sm mb-2" placeholder="Đường dẫn file CA (không bắt buộc, để trống = dùng CA hệ thống)">
+        <div class="form-text mb-2">Database ở máy khác: dùng IP/tên miền của máy đó làm Host và cho phép IP của hosting này truy cập cổng 3306.</div>
     </div>
     <h5 class="mt-3">Tài khoản quản trị</h5>
     <input name="admin_user" class="form-control mb-2" placeholder="Tên đăng nhập" required>

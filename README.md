@@ -51,6 +51,17 @@ PHP ≥ 8.0, có các extension `curl`, `pdo_sqlite` (hoặc `pdo_mysql`), `mbst
    ```
    Nếu hosting không có cron, dùng dịch vụ cron ngoài gọi URL `https://ten-mien/cron.php?secret=...` (URL đầy đủ có trong trang Cài đặt).
 
+### Dùng database MySQL ở máy khác (database từ xa)
+1. Trên máy chứa database: tạo database (utf8mb4) và user, cấp quyền cho user đó truy cập từ IP của hosting chạy bot, mở cổng 3306 trên tường lửa.
+   ```sql
+   CREATE DATABASE simbot CHARACTER SET utf8mb4;
+   CREATE USER 'simbot'@'IP_HOSTING' IDENTIFIED BY 'mat_khau_manh';
+   GRANT ALL ON simbot.* TO 'simbot'@'IP_HOSTING';
+   ```
+   Với MySQL tự cài, sửa `bind-address = 0.0.0.0` trong `my.cnf` để nhận kết nối từ ngoài.
+2. Ở `install.php` chọn **MySQL**: Host là IP hoặc tên miền của máy database, điền port, tên database, user và mật khẩu. Database đám mây (Aiven, TiDB Cloud, PlanetScale, ...) cần tick thêm **Kết nối SSL**.
+3. Bảng dữ liệu được tạo tự động. Có thể kiểm tra kết nối trước bằng lệnh `mysql -h HOST -P 3306 -u USER -p` chạy trên hosting.
+
 ### Chạy không cần webhook (VPS / máy cá nhân)
 ```
 php polling.php

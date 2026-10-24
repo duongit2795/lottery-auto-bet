@@ -16,7 +16,24 @@ final class DB
                 (int)$config['mysql_port'],
                 $config['mysql_db']
             );
-            self::$pdo = new PDO($dsn, $config['mysql_user'], $config['mysql_pass']);
+            $opts = [PDO::ATTR_TIMEOUT => 10];
+            if (!empty($config['mysql_ssl'])) {
+                // Database đám mây (Aiven, TiDB, PlanetScale, ...) thường bắt buộc SSL
+                $ca = $config['mysql_ssl_ca'] ?? '';
+                foreach ([$ca, '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt', '/etc/ssl/cert.pem'] as $path) {
+                    if ($path !== '' && is_readable($path)) {
+                        $opts[PDO::MYSQL_ATTR_SSL_CA] = $path;
+                        break;
+                    }
+                }
+                $opts[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = isset($opts[PDO::MYSQL_ATTR_SSL_CA]);
+            }
+            self::$pdo = new PDO($dsn, $config['mysql_user'], $config['mysql_pass'], $opts);
+            try {
+                self::$pdo->exec("SET time_zone = '+07:00'");
+            } catch (PDOException $e) {
+                // một số dịch vụ không cho đổi time_zone; giờ được tính bằng PHP nên không ảnh hưởng
+            }
         } else {
             $path = $config['sqlite_path'] ?? APP_ROOT . '/data/bot.sqlite';
             if (!is_dir(dirname($path))) {
