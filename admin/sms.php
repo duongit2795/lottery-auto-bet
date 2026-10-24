@@ -19,10 +19,10 @@ $filter = $_GET['f'] ?? '';
 $q = trim($_GET['q'] ?? '');
 $page = max(1, (int)($_GET['p'] ?? 1));
 $per = 50;
-$conds = ["(o.kind = 'sms' OR o.sms_sent = 1)"];
+$conds = ["(o.kind = 'sms' OR o.sms_sent > 0)"];
 $params = [];
 if ($filter === 'sent') {
-    $conds[] = 'o.sms_sent = 1 AND o.sms_info IS NOT NULL';
+    $conds[] = 'o.sms_sent > 0';
 } elseif ($filter === 'waiting') {
     $conds[] = "o.status = 'pending' AND o.sms_sent = 0";
 } elseif ($filter === 'refunded') {
@@ -37,7 +37,7 @@ $total = (int)DB::value("SELECT COUNT(*) FROM orders o LEFT JOIN users u ON u.id
 $rows = DB::all("SELECT o.*, u.tg_id, u.username FROM orders o LEFT JOIN users u ON u.id = o.user_id $where ORDER BY o.id DESC LIMIT $per OFFSET " . (($page - 1) * $per), $params);
 $today = date('Y-m-d 00:00:00');
 $stats = [
-    ['Gửi thành công hôm nay', (int)DB::value('SELECT COUNT(*) FROM orders WHERE sms_sent = 1 AND sms_info IS NOT NULL AND updated_at >= ?', [$today]), 'success'],
+    ['Tin gửi thành công hôm nay', (int)DB::value('SELECT COUNT(*) FROM sms_sends WHERE ok = 1 AND created_at >= ?', [$today]), 'success'],
     ['Đã thuê, chưa gửi', (int)DB::value("SELECT COUNT(*) FROM orders WHERE kind = 'sms' AND status = 'pending' AND sms_sent = 0"), 'warning'],
     ['Thuê bằng gói hôm nay', (int)DB::value("SELECT COUNT(*) FROM orders WHERE kind = 'sms' AND user_package_id IS NOT NULL AND created_at >= ?", [$today]), 'primary'],
 ];
@@ -67,7 +67,15 @@ layout_start('Tin nhắn (thuê số gửi tin)');
             <td><a href="users.php?id=<?= $o['user_id'] ?>"><?= h($o['username'] ? '@' . $o['username'] : $o['tg_id']) ?></a></td>
             <td><?= h($o['service_name']) ?></td>
             <td><code><?= h($o['phone']) ?></code></td>
-            <td class="small" style="max-width:280px"><?= $o['sms_info'] ? h($o['sms_info']) : '<span class="text-muted">—</span>' ?>
+            <td class="small" style="max-width:320px">
+                <?php $sends = DB::all('SELECT * FROM sms_sends WHERE order_id = ? ORDER BY id', [$o['id']]); ?>
+                <?php if ($sends): ?>
+                    <details><summary><b><?= (int)$o['sms_sent'] ?></b> lần gửi<?= count($sends) > (int)$o['sms_sent'] ? ' · ' . (count($sends) - (int)$o['sms_sent']) . ' lỗi' : '' ?><?= $o['sms_closed'] ? ' · <span class="text-danger">hết lượt</span>' : '' ?></summary>
+                        <?php foreach ($sends as $x): ?>
+                            <div><?= $x['ok'] ? '✅' : '❌' ?> <?= h(date('H:i d/m', strtotime($x['created_at']))) ?> → <?= h($x['receiver'] ?: ($x['kind'] === 'fixed' ? 'SMS cố định' : '')) ?> <?= $x['content'] ? '"' . h(mb_substr($x['content'], 0, 60)) . '"' : '' ?><?= $x['error'] ? ' <span class="text-danger">' . h($x['error']) . '</span>' : '' ?></div>
+                        <?php endforeach; ?>
+                    </details>
+                <?php else: ?><span class="text-muted">—</span><?php endif; ?>
                 <?php if ($o['otp'] || $o['sms']): ?><div class="text-muted">Nhận: <?= h($o['otp'] ?: mb_substr((string)$o['sms'], 0, 60)) ?></div><?php endif; ?></td>
             <td class="small"><?= $o['user_package_id'] ? 'Gói #' . (int)$o['user_package_id'] : money($o['price']) ?></td>
             <td><?= status_badge($o['status']) ?></td>

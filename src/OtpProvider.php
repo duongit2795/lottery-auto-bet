@@ -22,7 +22,7 @@ final class OtpProvider
         'SERVICE_NOT_FOUND' => 'Dịch vụ không tồn tại.',
         'NOT_OWNER' => 'Số thuê lại phải là số bạn đã thuê trước đó.',
         'RENT_NOT_FOUND' => 'Không tìm thấy yêu cầu thuê.',
-        'RENT_SENT_SMS' => 'Đơn này đã gửi SMS rồi (mỗi đơn chỉ gửi được 1 lần).',
+        'RENT_SENT_SMS' => 'Số này không gửi thêm được nữa (đã đạt giới hạn gửi của số thuê).',
         'RENT_NOT_PENDING' => 'Đơn không còn ở trạng thái chờ.',
         'TOO_CLOSE_RENT_WILL_FINISH' => 'Đơn sắp hết hạn (còn dưới 90 giây), không thể gửi.',
         'UNDEFINED_ERROR_234' => 'Lỗi không xác định từ nhà cung cấp.',
@@ -265,7 +265,7 @@ final class OtpProvider
     public function sendSms(string $orderId, array $params = []): array
     {
         $r = $this->request('send_sms', ['order_id' => $orderId], $params);
-        return ['ok' => $r['ok'], 'message' => $r['ok'] ? '' : self::friendlyError($r, 'Gửi yêu cầu thất bại')];
+        return ['ok' => $r['ok'], 'code' => $r['code'], 'message' => $r['ok'] ? '' : self::friendlyError($r, 'Gửi yêu cầu thất bại')];
     }
 
     public function canCancel(): bool

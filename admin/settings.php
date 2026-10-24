@@ -48,6 +48,8 @@ $groups = [
         ['sms_mode_auto', 'Tự cập nhật tính năng dịch vụ theo API khi đồng bộ', 'bool', 'Đọc is_support_send_custom_sms, is_support_send_default_sms, is_support_forward_call, is_support_call... Dịch vụ gửi được SMS sẽ tự hiện trong menu gửi tin'],
         ['sms_enabled', 'Bật chức năng gửi tin nhắn', 'bool', 'Menu "✉️ Gửi tin nhắn": khách thuê số của dịch vụ hỗ trợ gửi SMS rồi gửi tin từ số đó. Giá = giá bán dịch vụ, hoặc 1 lượt gói tin'],
         ['sms_max_length', 'Độ dài nội dung tối đa (ký tự)', 'number', ''],
+        ['sms_rent_max_hours', 'Giữ số đã gửi tin tối đa (giờ)', 'number', 'Số thuê gửi được nhiều lần cho tới khi BossOTP báo không gửi thêm được, khách bấm Xong, hoặc hết số giờ này'],
+        ['sms_refund_after_send', 'Hoàn tiền dù đã gửi tin', 'bool', 'Tắt (khuyên dùng): số đã gửi ít nhất 1 tin thì không hoàn khi hết hạn. Bật: vẫn hoàn nếu BossOTP báo FAILED/hết hạn'],
         ['sms_blacklist', 'Từ cấm trong nội dung', 'textarea', 'Cách nhau dấu phẩy. Chặn tin rác/lừa đảo, vd: otp,mat khau,chuyen khoan'],
     ],
     '🎁 Giới thiệu' => [

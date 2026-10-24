@@ -55,6 +55,8 @@ final class Settings
 
             // Gửi tin nhắn
             'sms_enabled' => '1',
+            'sms_rent_max_hours' => '6',      // số đã gửi tin được giữ tối đa bao lâu để gửi tiếp (BossOTP báo hết thì đóng sớm hơn)
+            'sms_refund_after_send' => '0',   // 1 = vẫn hoàn tiền nếu số đã gửi tin rồi mới hết hạn/FAILED
             'sms_max_length' => '300',     // độ dài nội dung tối đa
             'sms_blacklist' => '',         // từ cấm trong nội dung, cách nhau dấu phẩy
 

@@ -223,6 +223,8 @@ final class DB
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
                 kind VARCHAR(10) NOT NULL DEFAULT 'otp',
                 user_package_id INT,
+                sms_closed TINYINT NOT NULL DEFAULT 0,
+                sms_lock INT NOT NULL DEFAULT 0,
                 network VARCHAR(20),
                 sms_sent TINYINT NOT NULL DEFAULT 0,
                 sms_info VARCHAR(255),
@@ -302,6 +304,17 @@ final class DB
                 deposit_id INT,
                 created_at DATETIME
             )$tail",
+            "CREATE TABLE IF NOT EXISTS sms_sends (
+                id $pk,
+                order_id INT NOT NULL,
+                user_id INT NOT NULL,
+                kind VARCHAR(10) NOT NULL,
+                receiver VARCHAR(32),
+                content $text,
+                ok TINYINT NOT NULL DEFAULT 0,
+                error VARCHAR(255),
+                created_at DATETIME
+            )$tail",
             "CREATE TABLE IF NOT EXISTS broadcasts (
                 id $pk,
                 message $text,
@@ -321,6 +334,7 @@ final class DB
             'CREATE INDEX idx_jobs_status ON sms_jobs(status)',
             'CREATE INDEX idx_jobs_batch ON sms_jobs(batch)',
             'CREATE INDEX idx_upk_user ON user_packages(user_id)',
+            'CREATE INDEX idx_sends_order ON sms_sends(order_id)',
         ];
         // Nâng cấp CSDL cũ: thêm cột mới nếu chưa có
         $columns = [
@@ -331,6 +345,8 @@ final class DB
             "ALTER TABLE orders ADD COLUMN call_logs $text",
             "ALTER TABLE orders ADD COLUMN kind VARCHAR(10) NOT NULL DEFAULT 'otp'",
             'ALTER TABLE orders ADD COLUMN user_package_id INT',
+            'ALTER TABLE orders ADD COLUMN sms_closed TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE orders ADD COLUMN sms_lock INT NOT NULL DEFAULT 0',
             "ALTER TABLE users ADD COLUMN draft $text",
             'ALTER TABLE services ADD COLUMN sms_manual TINYINT NOT NULL DEFAULT 0',
             'ALTER TABLE services ADD COLUMN api_sms_mode VARCHAR(10)',

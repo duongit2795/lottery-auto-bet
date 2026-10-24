@@ -104,14 +104,18 @@ final class OrderService
                 $t .= '• ' . tg_escape($c['number'] ?? '?') . ' — ' . (int)($c['duration'] ?? 0) . "s ($time)\n";
             }
         }
-        if ($o['sms_info']) {
+        if ((int)$o['sms_sent'] > 0) {
+            $t .= "\n📤 <b>Đã gửi {$o['sms_sent']} lần</b>" . ($o['sms_info'] ? ' — gần nhất: ' . tg_escape($o['sms_info']) : '') . "\n";
+        } elseif ($o['sms_info']) {
             $t .= '📤 ' . tg_escape($o['sms_info']) . "\n";
         }
         if ($o['status'] === 'pending') {
             $left = max(0, strtotime($o['expires_at']) - time());
             $t .= "\n⏱ Còn lại: " . floor($left / 60) . ' phút ' . ($left % 60) . " giây\n"
-                . (($o['kind'] ?? 'otp') === 'sms' && !$o['sms_sent']
-                    ? '<i>👇 Bấm nút bên dưới để gửi tin nhắn từ số này (mỗi số gửi được 1 lần).</i>'
+                . (($o['kind'] ?? 'otp') === 'sms'
+                    ? (empty($o['sms_closed'])
+                        ? '<i>👇 Bấm nút bên dưới để gửi tin từ số này. Gửi được nhiều lần cho tới khi hệ thống báo không gửi thêm được.</i>'
+                        : '<i>Số này đã hết lượt gửi.</i>')
                     : '<i>OTP sẽ tự động gửi về khi có.</i>');
         }
         return $t;
@@ -127,16 +131,18 @@ final class OrderService
         if ($o['status'] === 'pending') {
             $rows = [];
             $svc = DB::row('SELECT * FROM services WHERE id = ?', [$o['service_id']]);
-            if ($svc && !$o['sms_sent']) {
-                // BossOTP chỉ cho 1 lần send-sms mỗi đơn → dùng 1 trong các nút
+            if ($svc && empty($o['sms_closed'])) {
+                // Gửi được nhiều lần cho tới khi BossOTP báo không gửi thêm được
                 foreach (self::ORDER_ACTIONS as $col => [$label, $cbName]) {
                     if (!empty($svc[$col])) {
                         $rows[] = [Telegram::btn($label, $cbName . ':' . $o['id'])];
                     }
                 }
             }
-            $row = [Telegram::btn('🔄 Kiểm tra OTP', 'chk:' . $o['id'])];
-            if (self::userCanCancel()) {
+            $row = [Telegram::btn(($o['kind'] ?? 'otp') === 'sms' ? '🔄 Cập nhật' : '🔄 Kiểm tra OTP', 'chk:' . $o['id'])];
+            if (($o['kind'] ?? 'otp') === 'sms' && (int)$o['sms_sent'] > 0) {
+                $row[] = Telegram::btn('✅ Xong, kết thúc', 'smsend:' . $o['id']);
+            } elseif (self::userCanCancel()) {
                 $row[] = Telegram::btn('❌ Hủy & hoàn tiền', 'cxl:' . $o['id']);
             }
             $rows[] = $row;
@@ -186,12 +192,49 @@ final class OrderService
                 $this->notify($o);
             }
         }
+        if (($o['kind'] ?? 'otp') === 'sms') {
+            $this->pollSmsRental($o, $r);
+            return DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
+        }
         if ($r['ok'] && ($r['otp'] !== null || $r['success'])) {
             $this->markSuccess($o, $r['otp'] ?? '', $r['sms'], $r['cost']);
         } elseif ($r['expired'] || strtotime($o['expires_at']) <= time()) {
             $this->refund($o, 'refunded', $r['expired'] ? 'Không nhận được OTP' : 'Hết thời gian chờ OTP');
         }
         return DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
+    }
+
+    /**
+     * Đơn thuê số gửi tin: giữ mở để gửi nhiều lần. Chỉ kết thúc khi BossOTP báo hết hạn/FAILED,
+     * khi khách bấm "Xong", hoặc hết thời gian (chưa gửi: order_timeout; đã gửi: sms_rent_max_hours).
+     */
+    private function pollSmsRental(array $o, array $r): void
+    {
+        // Lưu tin nhắn / OTP nhận được trên số thuê (nếu có)
+        if ($r['ok'] && (($r['otp'] && $r['otp'] !== $o['otp']) || ($r['sms'] && $r['sms'] !== $o['sms']))) {
+            DB::update('orders', ['otp' => $r['otp'] ?? $o['otp'], 'sms' => $r['sms'] ?? $o['sms'], 'updated_at' => now()], 'id = ?', [$o['id']]);
+            $this->notify(DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]));
+        }
+        $sent = (int)$o['sms_sent'] > 0;
+        $maxAge = max(1, Settings::int('sms_rent_max_hours')) * 3600;
+        $timedOut = $sent ? time() - strtotime($o['created_at']) >= $maxAge : strtotime($o['expires_at']) <= time();
+        if ($r['expired'] || $timedOut) {
+            $this->closeSmsRental($o, $r['expired'] ? 'Số thuê đã hết hạn' : 'Hết thời gian giữ số', $r['cost']);
+        }
+    }
+
+    /** Kết thúc đơn thuê gửi tin: đã gửi ít nhất 1 tin → tính phí; chưa gửi → hoàn tiền. */
+    public function closeSmsRental(array $o, string $reason, ?float $cost = null): void
+    {
+        $o = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]) ?? $o;
+        if ($o['status'] !== 'pending') {
+            return;
+        }
+        if ((int)$o['sms_sent'] === 0 || Settings::get('sms_refund_after_send') === '1') {
+            $this->refund($o, 'refunded', $reason);
+            return;
+        }
+        $this->markSuccess($o, (string)($o['otp'] ?? ''), $o['sms'], $cost);
     }
 
     private function markSuccess(array $o, string $otp, ?string $sms, ?float $cost): void
@@ -221,6 +264,10 @@ final class OrderService
         $this->notify($updated);
         // Tin nhắn mới để người dùng nhận được thông báo đẩy
         $tgId = DB::value('SELECT tg_id FROM users WHERE id = ?', [$o['user_id']]);
+        if (($o['kind'] ?? 'otp') === 'sms') {
+            $this->tg->send($tgId, "✅ <b>Đơn #{$o['id']} kết thúc</b> — số <code>" . tg_escape($o['phone']) . '</code> đã gửi <b>' . (int)$updated['sms_sent'] . '</b> lần.');
+            return;
+        }
         $this->tg->send($tgId, "🔑 <b>Đơn #{$o['id']} hoàn thành</b> (" . tg_escape($o['service_name']) . ")\nSĐT: <code>" . tg_escape($o['phone']) . '</code>'
             . ($otp !== '' ? "\nOTP: <code>" . tg_escape($otp) . '</code>' : '')
             . ($sms ? "\nSMS: " . tg_escape(mb_substr($sms, 0, 500)) : ''));
@@ -253,34 +300,58 @@ final class OrderService
      */
     public function sendSms(array $o, string $kind, string $number = '', string $content = ''): array
     {
+        $o = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]) ?? $o;
         if ($o['status'] !== 'pending') {
-            return ['ok' => false, 'message' => 'Đơn không còn ở trạng thái chờ.'];
+            return ['ok' => false, 'message' => 'Đơn đã kết thúc.'];
         }
-        if ($o['sms_sent']) {
-            return ['ok' => false, 'message' => 'Đơn này đã gửi yêu cầu rồi (mỗi đơn chỉ 1 lần).'];
+        if (!empty($o['sms_closed'])) {
+            return ['ok' => false, 'message' => 'Số này không gửi thêm được nữa. Hãy thuê số mới.'];
+        }
+        // Khóa ngắn để không gửi trùng khi bấm liên tục
+        $now = time();
+        if (DB::update('orders', ['sms_lock' => $now], 'id = ? AND sms_lock < ?', [$o['id'], $now - 15]) === 0) {
+            return ['ok' => false, 'message' => 'Đang gửi tin trước, vui lòng đợi vài giây.'];
         }
         $params = match ($kind) {
             'custom' => ['sms' => $content, 'number_receiver' => $number],
             'forward' => ['number_forward_call' => $number],
             default => [],
         };
-        // Đánh dấu trước để tránh gửi 2 lần khi bấm liên tục
-        if (DB::update('orders', ['sms_sent' => 1], 'id = ? AND sms_sent = 0', [$o['id']]) === 0) {
-            return ['ok' => false, 'message' => 'Đơn này đã gửi yêu cầu rồi.'];
-        }
         $r = $this->api->sendSms((string)$o['provider_order_id'], $params);
+        DB::insert('sms_sends', [
+            'order_id' => $o['id'],
+            'user_id' => $o['user_id'],
+            'kind' => $kind,
+            'receiver' => $number !== '' ? $number : null,
+            'content' => $content !== '' ? $content : null,
+            'ok' => $r['ok'] ? 1 : 0,
+            'error' => $r['ok'] ? null : mb_substr($r['message'], 0, 250),
+            'created_at' => now(),
+        ]);
         if (!$r['ok']) {
-            DB::update('orders', ['sms_sent' => 0], 'id = ?', [$o['id']]);
+            DB::update('orders', ['sms_lock' => 0], 'id = ?', [$o['id']]);
+            // BossOTP báo số này không gửi thêm được → đóng chức năng gửi
+            if (in_array($r['code'] ?? '', ['RENT_SENT_SMS', 'RENT_NOT_PENDING', 'TOO_CLOSE_RENT_WILL_FINISH', 'RENT_NOT_FOUND'], true)) {
+                DB::update('orders', ['sms_closed' => 1, 'updated_at' => now()], 'id = ?', [$o['id']]);
+                $fresh = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
+                if (($o['kind'] ?? 'otp') === 'sms') {
+                    $this->closeSmsRental($fresh, 'Số thuê không gửi thêm được');
+                } else {
+                    $this->notify($fresh);
+                }
+                return ['ok' => false, 'closed' => true, 'message' => $r['message'] . ((int)$o['sms_sent'] > 0 ? ' Đơn đã kết thúc sau ' . (int)$o['sms_sent'] . ' lần gửi.' : '')];
+            }
             return $r;
         }
         $info = match ($kind) {
-            'custom' => 'Đã gửi SMS tới ' . $number . ': "' . mb_substr($content, 0, 100) . '"',
-            'forward' => 'Đã chuyển tiếp cuộc gọi tới ' . $number,
-            default => 'Đã yêu cầu gửi SMS',
+            'custom' => 'SMS tới ' . $number . ': "' . mb_substr($content, 0, 80) . '"',
+            'forward' => 'Chuyển tiếp cuộc gọi tới ' . $number,
+            default => 'Gửi SMS cố định',
         };
-        DB::update('orders', ['sms_info' => mb_substr($info, 0, 250), 'updated_at' => now()], 'id = ?', [$o['id']]);
-        $this->notify(DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]));
-        return ['ok' => true, 'message' => $info];
+        DB::query('UPDATE orders SET sms_sent = sms_sent + 1, sms_lock = 0, sms_info = ?, updated_at = ? WHERE id = ?', [mb_substr($info, 0, 250), now(), $o['id']]);
+        $fresh = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
+        $this->notify($fresh);
+        return ['ok' => true, 'message' => "Lần {$fresh['sms_sent']}: $info"];
     }
 
     /** Chạy bởi cron: kiểm tra tất cả đơn đang chờ. */

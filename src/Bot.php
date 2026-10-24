@@ -283,6 +283,16 @@ final class Bot
             case 'smsr':
                 $this->doSmsRent($cb, $chat, (int)$arg, $mid);
                 return;
+            case 'smsend':
+                $o = DB::row("SELECT * FROM orders WHERE id = ? AND user_id = ? AND status = 'pending' AND kind = 'sms'", [(int)$arg, $this->user['id']]);
+                if (!$o) {
+                    $this->tg->answer($cb['id'], 'Đơn đã kết thúc', true);
+                    return;
+                }
+                $this->tg->answer($cb['id'], 'Đã kết thúc đơn');
+                $this->setState(null);
+                (new OrderService())->closeSmsRental($o, 'Khách kết thúc');
+                return;
             case 'smsh':
                 $this->tg->answer($cb['id']);
                 $this->showSmsHistory($chat);
@@ -470,13 +480,13 @@ final class Bot
     {
         $col = ['fixed' => 'sup_default_sms', 'custom' => 'sup_custom_sms', 'forward' => 'sup_forward_call'][$kind];
         $o = DB::row("SELECT o.*, s.$col AS supported FROM orders o JOIN services s ON s.id = o.service_id WHERE o.id = ? AND o.user_id = ?", [$orderId, $this->user['id']]);
-        if (!$o || $o['status'] !== 'pending' || $o['sms_sent'] || !$o['supported']) {
+        if (!$o || $o['status'] !== 'pending' || !empty($o['sms_closed']) || !$o['supported']) {
             $this->tg->answer($cb['id'], 'Không thể thực hiện với đơn này', true);
             return;
         }
         if ($kind === 'fixed') {
             $r = (new OrderService())->sendSms($o, 'fixed');
-            $this->tg->answer($cb['id'], $r['ok'] ? '✅ Đã yêu cầu gửi SMS' : $r['message'], !$r['ok']);
+            $this->tg->answer($cb['id'], $r['ok'] ? '✅ ' . $r['message'] : $r['message'], !$r['ok']);
             return;
         }
         $this->tg->answer($cb['id']);
@@ -484,6 +494,20 @@ final class Bot
         $this->tg->send($chat, $kind === 'custom'
             ? "✉️ Đơn #{$o['id']} — nhập <b>số điện thoại nhận tin nhắn</b>:\n<i>(gõ /huy để hủy thao tác)</i>"
             : "📞 Đơn #{$o['id']} — nhập <b>số điện thoại nhận cuộc gọi chuyển tiếp</b>:\n<i>(gõ /huy để hủy thao tác)</i>");
+    }
+
+    /** Báo kết quả gửi, kèm nút gửi tiếp nếu số còn gửi được. */
+    private function sendResult($chat, array $o, string $again, array $r): void
+    {
+        $fresh = DB::row('SELECT * FROM orders WHERE id = ?', [$o['id']]);
+        $kb = null;
+        if ($fresh && $fresh['status'] === 'pending' && empty($fresh['sms_closed'])) {
+            $kb = Telegram::inline([[
+                Telegram::btn($again === 'fwd' ? '📞 Chuyển tiếp số khác' : '✉️ Gửi tin tiếp', $again . ':' . $o['id']),
+                Telegram::btn('✅ Xong, kết thúc', 'smsend:' . $o['id']),
+            ]]);
+        }
+        $this->tg->send($chat, ($r['ok'] ? '✅ ' : '❌ ') . tg_escape($r['message']), $kb ?? $this->mainKeyboard());
     }
 
     /** Xử lý các bước nhập liệu gửi SMS / chuyển tiếp. Trả về true nếu đã xử lý. */
@@ -516,7 +540,7 @@ final class Bot
             if ($m[1] === 'fwd_to') {
                 $this->setState(null);
                 $r = (new OrderService())->sendSms($o, 'forward', $num);
-                $this->tg->send($chat, $r['ok'] ? '✅ ' . tg_escape($r['message']) : '❌ ' . tg_escape($r['message']), $this->mainKeyboard());
+                $this->sendResult($chat, $o, 'fwd', $r);
                 return true;
             }
             $this->setState('sms_text:' . $o['id'] . ':' . $num);
@@ -530,7 +554,7 @@ final class Bot
         }
         $this->setState(null);
         $r = (new OrderService())->sendSms($o, 'custom', '0' . ltrim($m[3], '0'), $text);
-        $this->tg->send($chat, $r['ok'] ? '✅ ' . tg_escape($r['message']) : '❌ ' . tg_escape($r['message']), $this->mainKeyboard());
+        $this->sendResult($chat, $o, 'smsc', $r);
         return true;
     }
 
@@ -699,8 +723,8 @@ final class Bot
         $kb = array_map(fn($s) => [Telegram::btn($s['name'] . ' — ' . (SmsService::credits($uid, (int)$s['id']) > 0 ? '1 lượt gói' : money($s['price'])), 'smss:' . $s['id'])], $services);
         $kb[] = [Telegram::btn('📦 Mua gói tin', 'pkgs'), Telegram::btn('📜 Lịch sử gửi', 'smsh')];
         $this->tg->send($chat, "✉️ <b>GỬI TIN NHẮN</b>\n\n"
-            . "<b>Cách dùng:</b>\n1️⃣ Chọn dịch vụ → bot <b>thuê 1 số</b> cho bạn\n2️⃣ Có số rồi, bấm <b>✉️ Gửi tin nhắn từ số này</b>\n3️⃣ Nhập số nhận + nội dung → tin được gửi từ số đã thuê\n\n"
-            . '<i>Mỗi số thuê gửi được 1 lần. Không gửi được / hết hạn sẽ tự hoàn tiền (hoặc hoàn lượt gói).</i>' . "\n\n"
+            . "<b>Cách dùng:</b>\n1️⃣ Chọn dịch vụ → bot <b>thuê 1 số</b> cho bạn\n2️⃣ Có số rồi, bấm <b>✉️ Gửi tin nhắn từ số này</b>\n3️⃣ Nhập số nhận + nội dung → tin được gửi từ số đã thuê\n4️⃣ Bấm <b>Gửi tin tiếp</b> để gửi thêm, xong bấm <b>✅ Xong</b>\n\n"
+            . '<i>1 số thuê gửi được nhiều tin cho tới khi hệ thống báo không gửi thêm được. Chưa gửi được tin nào mà hết hạn → tự hoàn tiền (hoặc hoàn lượt gói).</i>' . "\n\n"
             . 'Số dư: <b>' . money($this->user['balance']) . '</b> · Lượt gói: <b>' . SmsService::credits($uid) . "</b>\n\nChọn dịch vụ:", Telegram::inline($kb));
     }
 
@@ -765,7 +789,7 @@ final class Bot
 
     private function showSmsHistory($chat): void
     {
-        $rows = DB::all("SELECT * FROM orders WHERE user_id = ? AND (kind = 'sms' OR sms_sent = 1) ORDER BY id DESC LIMIT 15", [$this->user['id']]);
+        $rows = DB::all("SELECT * FROM orders WHERE user_id = ? AND (kind = 'sms' OR sms_sent > 0) ORDER BY id DESC LIMIT 15", [$this->user['id']]);
         if (!$rows) {
             $this->tg->send($chat, 'Bạn chưa thuê số gửi tin nào.');
             return;
@@ -775,7 +799,7 @@ final class Bot
         $kb = [];
         foreach ($rows as $o) {
             $t .= "\n" . ($icon[$o['status']] ?? '•') . " #{$o['id']} " . date('d/m H:i', strtotime($o['created_at'])) . ' · <code>' . tg_escape($o['phone']) . '</code> · '
-                . ($o['sms_info'] ? tg_escape(mb_substr($o['sms_info'], 0, 60)) : ($o['status'] === 'pending' ? 'chưa gửi' : 'không gửi'));
+                . ((int)$o['sms_sent'] > 0 ? 'đã gửi ' . (int)$o['sms_sent'] . ' lần' : ($o['status'] === 'pending' ? 'chưa gửi' : 'không gửi'));
             $kb[] = Telegram::btn('#' . $o['id'], 'ord:' . $o['id']);
         }
         $this->tg->send($chat, $t, Telegram::inline(array_chunk($kb, 5)));
