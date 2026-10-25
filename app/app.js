@@ -180,7 +180,7 @@
                 <div class="row between"><span class="muted">Dịch vụ</span><b>${esc(s.name)}</b></div>
                 <div class="row between"><span class="muted">Giá</span><b class="price">${useCredit ? '1 lượt gói (còn ' + s.credits + ')' : money(s.price)}</b></div>
                 <div class="row between"><span class="muted">Số dư</span><b>${money(state.user.balance)}</b></div>
-                <div class="row between"><span class="muted">Thời gian</span><b>${Math.round(cfg.order_timeout / 60)} phút</b></div>
+                <div class="row between"><span class="muted">Thời gian</span><b>${esc(s.timeout_text)}</b></div>
                 ${Object.keys(s.features).length ? `<div class="feat" style="margin-top:6px">Hỗ trợ: ${Object.values(s.features).map(esc).join(', ')}</div>` : ''}
                 ${cfg.allow_network && !sms ? `<label>Nhà mạng</label><div class="chips" id="nets"><button class="chip active" data-net="">Bất kỳ</button>${cfg.networks.map((n) => `<button class="chip" data-net="${n}">${n}</button>`).join('')}</div>` : ''}
                 <div class="gap"></div>

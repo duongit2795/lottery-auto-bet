@@ -34,7 +34,7 @@ final class Settings
             'min_price' => '0',
 
             // Đơn hàng
-            'order_timeout' => '900',      // giây chờ OTP trước khi tự hủy + hoàn tiền
+            'order_timeout' => '900',      // giây chờ mặc định — chỉ dùng khi dịch vụ không có thời gian riêng
             'allow_user_cancel' => '0',    // cho khách tự hủy khi nhà cung cấp không có API hủy
             'allow_network_select' => '1', // cho khách chọn nhà mạng khi thuê
             'allow_re_number' => '1',      // cho khách thuê lại số cũ
@@ -95,6 +95,8 @@ final class Settings
             'api_map_service_id' => '_id|id',
             'api_map_service_name' => 'name',
             'api_map_service_price' => 'price',
+            'api_map_service_timeout' => 'timeout', // thời gian thuê của dịch vụ trong danh sách dịch vụ
+            'api_timeout_unit' => 'ms',             // đơn vị của trường timeout: ms | s | min
             'sms_mode_auto' => '1',          // tự cập nhật tính năng (gửi SMS, chuyển tiếp...) theo API khi đồng bộ
             'api_map_order_id' => 'rent_id',
             'api_map_phone' => 'number',

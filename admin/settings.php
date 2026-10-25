@@ -24,7 +24,7 @@ $groups = [
         ['min_price', 'Giá bán tối thiểu', 'number', ''],
     ],
     '📱 Đơn thuê sim' => [
-        ['order_timeout', 'Thời gian chờ OTP (giây)', 'number', 'Hết thời gian chưa có OTP → hoàn tiền. Nên đặt ≥ thời gian thuê của BossOTP để tránh hoàn tiền rồi OTP mới về'],
+        ['order_timeout', 'Thời gian chờ mặc định (giây)', 'number', 'Mỗi dịch vụ dùng thời gian riêng theo API (trường timeout) hoặc chỉnh tay ở trang Dịch vụ. Giá trị này chỉ dùng khi dịch vụ không có thời gian'],
         ['max_pending_orders', 'Số đơn chờ tối đa / user', 'number', '0 = không giới hạn'],
         ['allow_cancel_after', 'Cho phép hủy sau (giây)', 'number', 'Chống thuê/hủy liên tục. 0 = hủy ngay được'],
         ['services_per_page', 'Số dịch vụ mỗi trang trong bot', 'number', ''],

@@ -200,6 +200,8 @@ final class DB
                 sort_order INT NOT NULL DEFAULT 0,
                 sms_mode VARCHAR(10) NOT NULL DEFAULT 'none',
                 sms_manual TINYINT NOT NULL DEFAULT 0,
+                timeout_raw INT,
+                timeout_custom INT NOT NULL DEFAULT 0,
                 sup_custom_sms TINYINT NOT NULL DEFAULT 0,
                 sup_default_sms TINYINT NOT NULL DEFAULT 0,
                 sup_forward_call TINYINT NOT NULL DEFAULT 0,
@@ -358,6 +360,8 @@ final class DB
             'ALTER TABLE services ADD COLUMN sup_forward_call TINYINT NOT NULL DEFAULT 0',
             'ALTER TABLE services ADD COLUMN sup_call TINYINT NOT NULL DEFAULT 0',
             'ALTER TABLE services ADD COLUMN sup_call_from_number TINYINT NOT NULL DEFAULT 0',
+            'ALTER TABLE services ADD COLUMN timeout_raw INT',
+            'ALTER TABLE services ADD COLUMN timeout_custom INT NOT NULL DEFAULT 0',
         ];
         foreach (array_merge($columns, $idx) as $sql) {
             try {

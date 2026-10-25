@@ -51,7 +51,8 @@ function service_out(array $s, int $credits = 0): array
             $features[$col] = $label;
         }
     }
-    return ['id' => (int)$s['id'], 'name' => $s['name'], 'price' => (float)$s['price'], 'features' => $features, 'credits' => $credits];
+    $timeout = OrderService::serviceTimeout($s);
+    return ['id' => (int)$s['id'], 'name' => $s['name'], 'price' => (float)$s['price'], 'features' => $features, 'credits' => $credits, 'timeout' => $timeout, 'timeout_text' => OrderService::duration($timeout)];
 }
 
 function order_out(array $o): array

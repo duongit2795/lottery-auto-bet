@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $f = $s['features'];
                 $known += $f !== null ? 1 : 0;
                 $smsCount += $f && ($f['sup_custom_sms'] || $f['sup_default_sms']) ? 1 : 0;
-                $data = ['cost' => $s['price'], 'api_raw' => json_encode($s['raw'], JSON_UNESCAPED_UNICODE), 'updated_at' => now()];
+                $data = ['cost' => $s['price'], 'timeout_raw' => $s['timeout'], 'api_raw' => json_encode($s['raw'], JSON_UNESCAPED_UNICODE), 'updated_at' => now()];
                 if ($auto && $f !== null && (!$row || !$row['sms_manual'])) {
                     $data += $f;
                 }
@@ -73,6 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'custom_price' => $price != (float)$row['price'] || $row['custom_price'] ? 1 : 0,
                 'is_active' => isset($s['active']) ? 1 : 0,
                 'sort_order' => (int)$s['sort'],
+                // Ô "Thời gian (phút)": để trống / 0 = theo API
+                'timeout_custom' => max(0, (int)round((float)str_replace(',', '.', (string)($s['timeout_min'] ?? '')) * 60)),
             ], 'id = ?', [(int)$id]);
         }
         flash('Đã lưu.');
@@ -150,14 +152,15 @@ layout_start('Dịch vụ & giá bán');
         <form method="post"><?= csrf_field() ?><button name="action" value="sms_api" class="btn btn-outline-warning btn-sm" onclick="return confirm('Đặt lại tính năng của tất cả dịch vụ theo API?')">📤 Tính năng theo API (tất cả)</button></form>
         <form class="ms-auto d-flex gap-1"><select name="sms" class="form-select form-select-sm" style="max-width:170px"><option value="">Tất cả dịch vụ</option><option value="1" <?= ($_GET['sms'] ?? '') === '1' ? 'selected' : '' ?>>Chỉ dịch vụ gửi SMS</option></select><input name="q" value="<?= h($q) ?>" class="form-control form-control-sm" placeholder="Tìm dịch vụ"><button class="btn btn-sm btn-secondary">Tìm</button></form>
     </div>
-    <div class="form-text">Cột <b>Tính năng</b> lấy đúng theo API khi đồng bộ (<code>is_support_send_custom_sms</code>, <code>is_support_send_default_sms</code>, <code>is_support_forward_call</code>, <code>is_support_call</code>, <code>is_support_call_from_number</code>). Dịch vụ có "Gửi SMS tùy chọn" hoặc "Gửi SMS cố định" sẽ hiện trong menu <b>✉️ Gửi tin nhắn</b>; các nút gửi SMS / chuyển tiếp cuộc gọi hiện trên đơn thuê tương ứng. Nếu bạn chỉnh tay (<span class="badge text-bg-secondary">tay</span>), lần đồng bộ sau không ghi đè — bấm "Theo API" để bỏ. ⚠ = khác với API.<br>Giá đã sửa tay (<span class="badge text-bg-info">tay</span>) sẽ không bị ghi đè khi đồng bộ/tính lại.</div>
+    <div class="form-text">Cột <b>Tính năng</b> lấy đúng theo API khi đồng bộ (<code>is_support_send_custom_sms</code>, <code>is_support_send_default_sms</code>, <code>is_support_forward_call</code>, <code>is_support_call</code>, <code>is_support_call_from_number</code>). Dịch vụ có "Gửi SMS tùy chọn" hoặc "Gửi SMS cố định" sẽ hiện trong menu <b>✉️ Gửi tin nhắn</b>; các nút gửi SMS / chuyển tiếp cuộc gọi hiện trên đơn thuê tương ứng. Nếu bạn chỉnh tay (<span class="badge text-bg-secondary">tay</span>), lần đồng bộ sau không ghi đè — bấm "Theo API" để bỏ. ⚠ = khác với API.<br>
+        Cột <b>Thời gian</b>: thời gian giữ số / chờ OTP của từng dịch vụ, lấy từ trường <code>timeout</code> của API (đơn vị chỉnh ở trang <a href="api.php">API nhà cung cấp</a>). Nhập số phút để đặt riêng, để trống = theo API.<br>Giá đã sửa tay (<span class="badge text-bg-info">tay</span>) sẽ không bị ghi đè khi đồng bộ/tính lại.</div>
 </div>
 
 <form method="post">
     <?= csrf_field() ?>
     <div class="card card-body mb-3"><div class="table-responsive">
     <table class="table table-sm table-hover">
-        <tr><th>Bật</th><th>ID API</th><th>Tên hiển thị</th><th>Giá gốc</th><th>Giá bán</th><th>Lãi</th><th>Ưu tiên</th><th>Tính năng (theo API)</th><th>Đã bán</th><th></th></tr>
+        <tr><th>Bật</th><th>ID API</th><th>Tên hiển thị</th><th>Giá gốc</th><th>Giá bán</th><th>Lãi</th><th>Ưu tiên</th><th>Tính năng (theo API)</th><th title="Thời gian giữ số / chờ OTP">Thời gian</th><th>Đã bán</th><th></th></tr>
         <?php foreach ($rows as $s): $sold = (int)DB::value("SELECT COUNT(*) FROM orders WHERE service_id = ? AND status = 'success'", [$s['id']]); ?>
             <tr>
                 <td><input type="checkbox" class="form-check-input" name="svc[<?= $s['id'] ?>][active]" <?= $s['is_active'] ? 'checked' : '' ?>></td>
@@ -178,6 +181,11 @@ layout_start('Dịch vụ & giá bán');
                     <?php if ($api === null): ?><i class="text-muted">API chưa có dữ liệu</i><?php endif; ?>
                     <?php if ($s['sms_manual']): ?><span class="badge text-bg-secondary">tay</span> <button form="f-smsapi" name="id" value="<?= $s['id'] ?>" class="btn btn-link btn-sm p-0">Theo API</button><?php endif; ?>
                 </td>
+                <td class="small" style="min-width:120px">
+                    <?php $apiSec = $s['timeout_raw'] !== null ? OrderService::serviceTimeout(['timeout_raw' => $s['timeout_raw']]) : null; ?>
+                    <div class="input-group input-group-sm"><input name="svc[<?= $s['id'] ?>][timeout_min]" value="<?= $s['timeout_custom'] ? round($s['timeout_custom'] / 60, 1) : '' ?>" class="form-control" placeholder="<?= $apiSec ? round($apiSec / 60, 1) : '' ?>" inputmode="decimal"><span class="input-group-text">phút</span></div>
+                    <div class="text-muted">API: <?= $s['timeout_raw'] !== null ? h($s['timeout_raw']) . ' → ' . h(OrderService::duration($apiSec)) : '<i>không có</i>' ?><?= $s['timeout_custom'] ? ' · <span class="badge text-bg-secondary">tay</span>' : '' ?></div>
+                </td>
                 <td><?= $sold ?></td>
                 <td class="text-nowrap">
                     <?php if ($s['custom_price']): ?><button form="f-auto" name="id" value="<?= $s['id'] ?>" class="btn btn-sm btn-link p-0">Giá tự động</button><?php endif; ?>
@@ -186,7 +194,7 @@ layout_start('Dịch vụ & giá bán');
                 </td>
             </tr>
         <?php endforeach; ?>
-        <?php if (!$rows): ?><tr><td colspan="10" class="text-muted">Chưa có dịch vụ. Bấm "Đồng bộ từ API" hoặc thêm thủ công bên dưới.</td></tr><?php endif; ?>
+        <?php if (!$rows): ?><tr><td colspan="11" class="text-muted">Chưa có dịch vụ. Bấm "Đồng bộ từ API" hoặc thêm thủ công bên dưới.</td></tr><?php endif; ?>
     </table>
     </div>
     <?= paginate($total, $per, $page, ['q' => $q, 'sms' => $_GET['sms'] ?? '']) ?>

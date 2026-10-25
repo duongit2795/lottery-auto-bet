@@ -418,7 +418,7 @@ final class Bot
         $text = "🛒 <b>Xác nhận thuê sim</b>\n\nDịch vụ: <b>" . tg_escape($s['name']) . "</b>\nGiá: <b>" . money($s['price']) . "</b>\n"
             . 'Nhà mạng: <b>' . ($network !== '' ? tg_escape($network) : 'Bất kỳ') . "</b>\n"
             . 'Số dư: <b>' . money($this->user['balance']) . "</b>\n"
-            . 'Thời gian chờ OTP: ' . round(Settings::int('order_timeout') / 60) . " phút$smsNote\n\n<i>Không nhận được OTP sẽ tự động hoàn tiền 100%.</i>";
+            . 'Thời gian chờ OTP: ' . OrderService::duration(OrderService::serviceTimeout($s)) . "$smsNote\n\n<i>Không nhận được OTP sẽ tự động hoàn tiền 100%.</i>";
         if ($enough) {
             $netIdx = array_search($network, OtpProvider::NETWORKS, true);
             $kb = [[Telegram::btn('✅ Xác nhận thuê', 'cfm:' . $s['id'] . ($netIdx !== false ? ':' . $netIdx : ''))]];
@@ -733,7 +733,7 @@ final class Bot
             . 'Hỗ trợ: ' . implode(', ', array_column($features, 1)) . "\n"
             . 'Thanh toán: <b>' . ($credits > 0 ? "1 lượt gói</b> (còn $credits)" : money($s['price']) . '</b>') . "\n"
             . 'Số dư: ' . money($this->user['balance']) . "\n"
-            . 'Thời gian giữ số: ' . round(Settings::int('order_timeout') / 60) . " phút\n\n"
+            . 'Thời gian giữ số: ' . OrderService::duration(OrderService::serviceTimeout($s)) . "\n\n"
             . '<i>Bấm Thuê số → bot lấy số cho bạn, sau đó bạn nhập số nhận và nội dung để gửi.</i>';
         $kb = $credits > 0 || (float)$this->user['balance'] >= (float)$s['price']
             ? [[Telegram::btn('✅ Thuê số', 'smsr:' . $s['id'])]]

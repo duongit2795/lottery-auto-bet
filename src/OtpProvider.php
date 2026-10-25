@@ -187,6 +187,7 @@ final class OtpProvider
                 'name' => (string)$name,
                 'price' => is_numeric($price) ? (float)$price : 0.0,
                 'features' => self::features($item), // null = API không có thông tin
+                'timeout' => is_numeric($t = $this->map($item, 'service_timeout')) ? (int)$t : null,
                 'raw' => $item,
             ];
         }

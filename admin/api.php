@@ -27,6 +27,8 @@ $fields = [
         ['api_map_service_id', 'ID dịch vụ (trong mỗi phần tử)', ''],
         ['api_map_service_name', 'Tên dịch vụ (trong mỗi phần tử)', ''],
         ['api_map_service_price', 'Giá gốc (trong mỗi phần tử)', ''],
+        ['api_map_service_timeout', 'Thời gian thuê (trong mỗi phần tử)', 'Mặc định: timeout'],
+        ['api_timeout_unit', 'Đơn vị thời gian thuê', 'ms = mili giây (180000 = 3 phút), s = giây, min = phút. Xem cột Thời gian ở trang Dịch vụ để kiểm tra'],
         ['api_map_order_id', 'ID đơn thuê', ''],
         ['api_map_phone', 'Số điện thoại', ''],
         ['api_map_otp', 'Mã OTP', ''],

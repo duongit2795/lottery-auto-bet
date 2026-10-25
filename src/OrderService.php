@@ -75,11 +75,45 @@ final class OrderService
             'kind' => $kind,
             'user_package_id' => $packageId,
             'network' => $opts['network'] ?? null,
-            'expires_at' => date('Y-m-d H:i:s', time() + Settings::int('order_timeout')),
+            'expires_at' => date('Y-m-d H:i:s', time() + self::serviceTimeout($service)),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         return ['ok' => true, 'message' => '', 'order' => DB::row('SELECT * FROM orders WHERE id = ?', [$id])];
+    }
+
+    /**
+     * Thời gian giữ số (giây) của dịch vụ: chỉnh tay trong admin > thời gian API trả về > mặc định.
+     * API BossOTP trả "timeout" theo đơn vị cấu hình ở api_timeout_unit (mặc định mili giây).
+     */
+    public static function serviceTimeout(array $service): int
+    {
+        if ((int)($service['timeout_custom'] ?? 0) > 0) {
+            return (int)$service['timeout_custom'];
+        }
+        $raw = (int)($service['timeout_raw'] ?? 0);
+        if ($raw > 0) {
+            $sec = match ((string)Settings::get('api_timeout_unit')) {
+                's' => $raw,
+                'min' => $raw * 60,
+                default => intdiv($raw, 1000),
+            };
+            if ($sec >= 30) {
+                return $sec;
+            }
+        }
+        return max(60, Settings::int('order_timeout'));
+    }
+
+    /** "3 phút", "1 giờ 30 phút", "45 giây". */
+    public static function duration(int $sec): string
+    {
+        if ($sec < 60) {
+            return $sec . ' giây';
+        }
+        $h = intdiv($sec, 3600);
+        $m = intdiv($sec % 3600, 60);
+        return trim(($h ? $h . ' giờ ' : '') . ($m ? $m . ' phút' : ''));
     }
 
     public static function orderText(array $o): string
@@ -211,7 +245,7 @@ final class OrderService
 
     /**
      * Đơn thuê số gửi tin: giữ mở để gửi nhiều lần. Chỉ kết thúc khi BossOTP báo hết hạn/FAILED,
-     * khi khách bấm "Xong", hoặc hết thời gian (chưa gửi: order_timeout; đã gửi: sms_rent_max_hours).
+     * khi khách bấm "Xong", hoặc hết thời gian (chưa gửi: thời gian của dịch vụ; đã gửi: sms_rent_max_hours).
      */
     private function pollSmsRental(array $o, array $r): void
     {
