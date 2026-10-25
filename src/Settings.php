@@ -50,6 +50,7 @@ final class Settings
             'bank_account' => '',
             'bank_owner' => '',
             'deposit_bonus_percent' => '0',
+            'qr_use_vietqr' => '1',        // 1 = ưu tiên ảnh img.vietqr.io (có logo), lỗi thì tự vẽ QR; 0 = luôn tự vẽ
             'payment_webhook_key' => '',   // key xác thực webhook SePay/Casso
             'bank_api_url' => '',          // link API lịch sử giao dịch Web2M (chứa mật khẩu, chỉ lưu trong CSDL)
             'bank_api_interval' => '20',   // giây giữa 2 lần quét lịch sử

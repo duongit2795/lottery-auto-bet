@@ -60,9 +60,10 @@ final class Telegram
         return $this->call('editMessageText', $p);
     }
 
-    public function photo($chatId, string $photoUrl, string $caption, ?array $keyboard = null): array
+    /** $photo: link ảnh, file_id, hoặc CURLFile (upload ảnh từ server). */
+    public function photo($chatId, $photo, string $caption, ?array $keyboard = null): array
     {
-        $p = ['chat_id' => $chatId, 'photo' => $photoUrl, 'caption' => $caption, 'parse_mode' => 'HTML'];
+        $p = ['chat_id' => $chatId, 'photo' => $photo, 'caption' => $caption, 'parse_mode' => 'HTML'];
         if ($keyboard !== null) {
             $p['reply_markup'] = $keyboard;
         }

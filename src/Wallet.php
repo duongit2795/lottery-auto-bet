@@ -33,12 +33,15 @@ final class Wallet
     {
         $amount = max($amount, Settings::int('min_deposit'));
         $memo = Settings::get('deposit_prefix') . $user['deposit_code'];
+        $img = Qr::image($amount, $memo);
         return [
+            'qr_data' => $img ? 'data:image/png;base64,' . base64_encode($img['bytes']) : null,
+            'qr_file' => $img['path'] ?? null,
             'amount' => $amount,
             'memo' => $memo,
             'bank_name' => (string)Settings::get('bank_name'),
             'bank_account' => (string)Settings::get('bank_account'),
-            'bank_owner' => (string)Settings::get('bank_owner'),
+            'bank_owner' => Qr::plain((string)Settings::get('bank_owner')),
             'qr' => sprintf(
                 'https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s',
                 rawurlencode((string)Settings::get('bank_bin')),

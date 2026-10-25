@@ -31,6 +31,8 @@ require_once APP_ROOT . '/src/Settings.php';
 require_once APP_ROOT . '/src/Telegram.php';
 require_once APP_ROOT . '/src/OtpProvider.php';
 require_once APP_ROOT . '/src/Wallet.php';
+require_once APP_ROOT . '/src/Qr.php';
+require_once APP_ROOT . '/src/QrEncoder.php';
 require_once APP_ROOT . '/src/OrderService.php';
 require_once APP_ROOT . '/src/SmsService.php';
 require_once APP_ROOT . '/src/Bot.php';

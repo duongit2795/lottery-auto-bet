@@ -34,9 +34,10 @@ $groups = [
     ],
     '💰 Nạp tiền' => [
         ['bank_name', 'Tên ngân hàng', 'text', 'vd: MB Bank'],
-        ['bank_bin', 'Mã BIN ngân hàng (VietQR)', 'text', 'MB=970422, VCB=970436, TCB=970407, ACB=970416, VPB=970432, TPB=970423, BIDV=970418, VTB=970415'],
+        ['bank_bin', 'Ngân hàng nhận tiền (mã QR)', 'select:' . implode('|', array_map(fn($bin, $name) => "$bin=$name ($bin)", array_keys(Qr::BANKS), Qr::BANKS)), 'Chọn đúng ngân hàng của số tài khoản — mã QR dùng mã ngân hàng này. Bấm "Xem thử mã QR" ở đầu trang để kiểm tra'],
         ['bank_account', 'Số tài khoản', 'text', ''],
-        ['bank_owner', 'Chủ tài khoản', 'text', 'Viết HOA không dấu'],
+        ['bank_owner', 'Chủ tài khoản', 'text', 'Viết có dấu cũng được, bot tự chuyển sang HOA không dấu'],
+        ['qr_use_vietqr', 'Dùng ảnh QR của VietQR (có logo)', 'bool', 'Tắt = luôn tự vẽ QR trên server (nhanh, không cần internet). Bật = thử img.vietqr.io trước, lỗi thì tự vẽ'],
         ['deposit_prefix', 'Tiền tố nội dung CK', 'text', 'Nội dung = tiền tố + mã 6 ký tự của user (vd: NAPAB12CD)'],
         ['min_deposit', 'Nạp tối thiểu', 'number', ''],
         ['deposit_bonus_percent', 'Khuyến mãi nạp (%)', 'number', ''],
@@ -124,6 +125,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash('Token không hợp lệ: ' . h($me['description'] ?? ''), 'danger');
         }
+    } elseif ($action === 'check_qr') {
+        if ($err = Qr::configError()) {
+            flash('❌ Mã QR: ' . h($err), 'danger');
+        } else {
+            @array_map('unlink', glob(APP_ROOT . '/data/qr/*.png') ?: []); // xóa ảnh cũ để tạo lại theo cấu hình mới
+            $img = Qr::image(max(10000, Settings::int('min_deposit')), Settings::get('deposit_prefix') . 'TEST01');
+            flash($img
+                ? '✅ Tạo mã QR thành công (nguồn: ' . h($img['source']) . '). Quét thử bằng app ngân hàng — phải hiện đúng tên <b>' . h(Qr::plain((string)Settings::get('bank_owner'))) . '</b>:<br><img src="data:image/png;base64,' . base64_encode($img['bytes']) . '" style="max-width:260px;margin-top:8px;border-radius:8px">'
+                : '❌ Không tạo được ảnh QR từ mọi nguồn — server có thể bị chặn kết nối ra ngoài. Xem data/logs/qr-*.log', $img ? 'success' : 'danger');
+        }
     } elseif ($action === 'check_bank') {
         $r = BankSync::fetch();
         if (!$r['ok']) {
@@ -170,6 +181,7 @@ layout_start('Cài đặt');
         <?= csrf_field() ?>
         <button name="action" value="check_bot" class="btn btn-outline-primary btn-sm">Kiểm tra bot</button>
         <button name="action" value="check_api" class="btn btn-outline-primary btn-sm">Kiểm tra API key</button>
+        <button name="action" value="check_qr" class="btn btn-outline-success btn-sm">Xem thử mã QR</button>
         <button name="action" value="check_bank" class="btn btn-outline-success btn-sm">Kiểm tra API ngân hàng</button>
         <button name="action" value="sync_bank" class="btn btn-outline-success btn-sm">Quét nạp tiền ngay</button>
         <button name="action" value="set_webhook" class="btn btn-primary btn-sm">Đặt webhook → <?= h(base_url()) ?>/webhook.php</button>
@@ -199,7 +211,8 @@ layout_start('Cài đặt');
                         <div class="form-check form-switch"><input class="form-check-input" type="checkbox" name="<?= $key ?>" <?= $val === '1' ? 'checked' : '' ?>></div>
                     <?php elseif (str_starts_with($type, 'select:')): ?>
                         <select name="<?= $key ?>" class="form-select">
-                            <?php foreach (explode('|', substr($type, 7)) as $opt): [$ov, $ol] = explode('=', $opt); ?>
+                            <?php $opts = explode('|', substr($type, 7)); if ($val !== '' && !in_array($val, array_map(fn($o) => explode('=', $o)[0], $opts), true)) { $opts[] = $val . '=' . $val . ' (đang dùng)'; } ?>
+                            <?php foreach ($opts as $opt): [$ov, $ol] = explode('=', $opt, 2); ?>
                                 <option value="<?= h($ov) ?>" <?= $val === $ov ? 'selected' : '' ?>><?= h($ol) ?></option>
                             <?php endforeach; ?>
                         </select>

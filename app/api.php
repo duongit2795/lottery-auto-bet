@@ -249,7 +249,9 @@ switch ($action) {
         if ((string)Settings::get('bank_account') === '') {
             fail('Chức năng nạp tiền chưa được cấu hình.');
         }
-        out(['ok' => true, 'info' => Wallet::depositInfo($user, (int)($in['amount'] ?? 0))]);
+        $info = Wallet::depositInfo($user, (int)($in['amount'] ?? 0));
+        unset($info['qr_file']);
+        out(['ok' => true, 'info' => $info]);
 
     case 'deposit_claim':
         $amount = (int)($in['amount'] ?? 0);

@@ -372,7 +372,7 @@
             const i = r.info;
             document.getElementById('qrBox').innerHTML = `
                 <div class="card">
-                    <img class="qr" src="${esc(i.qr)}" alt="QR">
+                    <img class="qr" src="${esc(i.qr_data || i.qr)}" alt="QR" onerror="this.style.display='none'">
                     <div class="copy"><div><div class="small muted">Ngân hàng</div><b>${esc(i.bank_name)}</b></div></div>
                     <div class="copy"><div><div class="small muted">Số tài khoản</div><b>${esc(i.bank_account)}</b></div><button class="btn sm" data-copy="${esc(i.bank_account)}">Sao chép</button></div>
                     <div class="copy"><div><div class="small muted">Chủ tài khoản</div><b>${esc(i.bank_owner)}</b></div></div>

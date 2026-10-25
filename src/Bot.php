@@ -650,14 +650,19 @@ final class Bot
         $caption = "🏦 <b>Chuyển khoản ngân hàng</b>\n\n"
             . 'Ngân hàng: <b>' . tg_escape(Settings::get('bank_name')) . "</b>\n"
             . 'Số tài khoản: <code>' . tg_escape(Settings::get('bank_account')) . "</code>\n"
-            . 'Chủ tài khoản: <b>' . tg_escape(Settings::get('bank_owner')) . "</b>\n"
-            . 'Số tiền: <b>' . money($amount) . "</b>\n"
+            . 'Chủ tài khoản: <b>' . tg_escape($info['bank_owner']) . "</b>\n"
+            . 'Số tiền: <b>' . money($info['amount']) . "</b>\n"
             . 'Nội dung: <code>' . tg_escape($memo) . "</code>\n\n"
             . "⚠️ Ghi <b>đúng nội dung</b> để được cộng tiền tự động.\nSau khi chuyển, bấm nút bên dưới nếu sau 5 phút chưa được cộng.";
-        $kb = Telegram::inline([[Telegram::btn('✅ Tôi đã chuyển khoản', 'depdone:' . $amount)]]);
-        $r = $this->tg->photo($chat, $qr, $caption, $kb);
+        $kb = Telegram::inline([[Telegram::btn('✅ Tôi đã chuyển khoản', 'depdone:' . $info['amount'])]]);
+        // Upload ảnh QR từ server (ổn định hơn để Telegram tự tải link). Lỗi thì gửi link, cuối cùng gửi chữ.
+        $r = !empty($info['qr_file']) ? $this->tg->photo($chat, new CURLFile($info['qr_file'], 'image/png', 'qr.png'), $caption, $kb) : ['ok' => false];
         if (empty($r['ok'])) {
-            $this->tg->send($chat, $caption, $kb);
+            $r = $this->tg->photo($chat, $qr, $caption, $kb);
+        }
+        if (empty($r['ok'])) {
+            $this->tg->send($chat, $caption . "\n\n<i>(Không tạo được ảnh QR — vui lòng chuyển khoản theo thông tin trên)</i>", $kb);
+            app_log('qr', 'Gửi QR thất bại: ' . ($r['description'] ?? ''));
         }
     }
 
