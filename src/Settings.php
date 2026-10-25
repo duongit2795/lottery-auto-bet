@@ -50,7 +50,11 @@ final class Settings
             'bank_account' => '',
             'bank_owner' => '',
             'deposit_bonus_percent' => '0',
-            'qr_use_vietqr' => '1',        // 1 = ưu tiên ảnh img.vietqr.io (có logo), lỗi thì tự vẽ QR; 0 = luôn tự vẽ
+            'qr_use_vietqr' => '1',        // (cũ) giữ để tương thích; dùng qr_source
+            'qr_source' => 'auto',         // auto | api | link | local — xem Qr::image()
+            'qr_template' => 'compact2',   // mẫu ảnh VietQR: compact2 | compact | qr_only | print
+            'vietqr_client_id' => '',      // API tạo mã QR (my.vietqr.io) — không bắt buộc
+            'vietqr_api_key' => '',
             'payment_webhook_key' => '',   // key xác thực webhook SePay/Casso
             'bank_api_url' => '',          // link API lịch sử giao dịch Web2M (chứa mật khẩu, chỉ lưu trong CSDL)
             'bank_api_interval' => '20',   // giây giữa 2 lần quét lịch sử

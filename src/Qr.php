@@ -88,38 +88,95 @@ final class Qr
     }
 
     /** Ảnh PNG của mã QR, hoặc null nếu mọi nguồn đều lỗi. Trả về ['bytes','path','source']. */
+    /** Mẫu ảnh VietQR hợp lệ: compact2 (có logo + thông tin), compact (có logo), qr_only (chỉ mã), print (bản in). */
+    public const TEMPLATES = ['compact2', 'compact', 'qr_only', 'print'];
+
+    /**
+     * Cách lấy ảnh, đặt trong Cài đặt (qr_source):
+     *   auto  = API tạo mã QR (api.vietqr.io/v2/generate) → Link tạo mã nhanh (img.vietqr.io) → tự vẽ
+     *   api   = chỉ API, lỗi thì tự vẽ
+     *   link  = chỉ link nhanh, lỗi thì tự vẽ
+     *   local = luôn tự vẽ trên server (không cần internet)
+     */
     public static function image(int $amount, string $memo): ?array
     {
         $bin = trim((string)Settings::get('bank_bin'));
         $acc = preg_replace('/\s+/', '', (string)Settings::get('bank_account'));
         $owner = self::plain((string)Settings::get('bank_owner'));
+        $memo = self::plain($memo);
+        $template = in_array(Settings::get('qr_template'), self::TEMPLATES, true) ? (string)Settings::get('qr_template') : 'compact2';
+        $source = (string)(Settings::get('qr_source') ?: 'auto');
+        if (Settings::get('qr_use_vietqr') === '0') {
+            $source = 'local'; // tương thích cài đặt cũ
+        }
         $dir = APP_ROOT . '/data/qr';
         if (!is_dir($dir)) {
             @mkdir($dir, 0775, true);
         }
-        $path = $dir . '/' . md5("$bin|$acc|$owner|$amount|$memo") . '.png';
-        if (is_file($path) && filesize($path) > 500) {
+        $path = $dir . '/' . md5("$bin|$acc|$owner|$amount|$memo|$template|$source") . '.png';
+        if (is_file($path) && filesize($path) > 100) {
             return ['bytes' => (string)file_get_contents($path), 'path' => $path, 'source' => 'cache'];
         }
-        $payload = self::payload($bin, $acc, $amount, $memo);
-        if (Settings::get('qr_use_vietqr') !== '0') {
-            $url = sprintf('https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s',
-                rawurlencode($bin), rawurlencode($acc), $amount, rawurlencode(self::plain($memo)), rawurlencode($owner));
-            $bytes = self::download($url);
+
+        $tries = ['auto' => ['api', 'link'], 'api' => ['api'], 'link' => ['link'], 'local' => []][$source] ?? ['api', 'link'];
+        foreach ($tries as $t) {
+            $bytes = $t === 'api'
+                ? self::fromApi($bin, $acc, $owner, $amount, $memo, $template)
+                : self::download(sprintf('https://img.vietqr.io/image/%s-%s-%s.png?amount=%d&addInfo=%s&accountName=%s',
+                    rawurlencode($bin), rawurlencode($acc), $template, $amount, rawurlencode($memo), rawurlencode($owner)));
             if ($bytes !== null) {
                 @file_put_contents($path, $bytes);
-                return ['bytes' => $bytes, 'path' => $path, 'source' => 'vietqr'];
+                return ['bytes' => $bytes, 'path' => $path, 'source' => $t === 'api' ? 'vietqr-api' : 'vietqr-link'];
             }
-            app_log('qr', "img.vietqr.io lỗi, chuyển sang tự vẽ QR: $url");
         }
         try {
-            $bytes = QrEncoder::png($payload, 10, 4);
+            $bytes = QrEncoder::png(self::payload($bin, $acc, $amount, $memo), 10, 4);
         } catch (Throwable $e) {
             app_log('qr', 'Tự vẽ QR lỗi: ' . $e->getMessage());
             return null;
         }
         @file_put_contents($path, $bytes);
         return ['bytes' => $bytes, 'path' => $path, 'source' => 'local'];
+    }
+
+    /**
+     * API tạo mã QR của VietQR: POST https://api.vietqr.io/v2/generate
+     * Header x-client-id / x-api-key (lấy tại my.vietqr.io, không bắt buộc), body JSON:
+     * accountNo, accountName, acqId (BIN), amount, addInfo, format=text, template.
+     * Trả về data.qrDataURL = "data:image/png;base64,...".
+     */
+    private static function fromApi(string $bin, string $acc, string $owner, int $amount, string $memo, string $template): ?string
+    {
+        $headers = ['Content-Type: application/json', 'Accept: application/json'];
+        if ($id = trim((string)Settings::get('vietqr_client_id'))) {
+            $headers[] = 'x-client-id: ' . $id;
+        }
+        if ($key = trim((string)Settings::get('vietqr_api_key'))) {
+            $headers[] = 'x-api-key: ' . $key;
+        }
+        $body = json_encode([
+            'accountNo' => $acc,
+            'accountName' => $owner,
+            'acqId' => (int)$bin,
+            'amount' => $amount,
+            'addInfo' => $memo,
+            'format' => 'text',
+            'template' => $template,
+        ]);
+        $ch = curl_init((string)(Settings::get('vietqr_api_url') ?: 'https://api.vietqr.io/v2/generate'));
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => $headers, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_CONNECTTIMEOUT => 5]);
+        $raw = curl_exec($ch);
+        $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $res = json_decode((string)$raw, true);
+        $url = (string)($res['data']['qrDataURL'] ?? '');
+        if (($res['code'] ?? '') !== '00' || !preg_match('#^data:image/(png|jpeg);base64,(.+)$#s', $url, $m)) {
+            app_log('qr', 'API tạo mã QR lỗi: ' . ($err ?: "HTTP $http " . mb_substr((string)$raw, 0, 200)));
+            return null;
+        }
+        $bytes = base64_decode($m[2], true);
+        return $bytes !== false && strlen($bytes) > 100 && (str_starts_with($bytes, "\x89PNG") || str_starts_with($bytes, "\xFF\xD8")) ? $bytes : null;
     }
 
     private static function download(string $url): ?string
@@ -131,7 +188,8 @@ final class Qr
         $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
         curl_close($ch);
         // Chỉ nhận ảnh PNG/JPEG thật (VietQR trả trang lỗi HTML/JSON khi sai thông tin)
-        if ($code !== 200 || !is_string($body) || strlen($body) < 500 || !str_starts_with($type, 'image/')) {
+        if ($code !== 200 || !is_string($body) || strlen($body) < 100 || !str_starts_with($type, 'image/')) {
+            app_log('qr', "Link tạo mã nhanh lỗi (HTTP $code): $url");
             return null;
         }
         return (str_starts_with($body, "\x89PNG") || str_starts_with($body, "\xFF\xD8")) ? $body : null;

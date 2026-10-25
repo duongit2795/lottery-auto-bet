@@ -43,12 +43,13 @@ final class Wallet
             'bank_account' => (string)Settings::get('bank_account'),
             'bank_owner' => Qr::plain((string)Settings::get('bank_owner')),
             'qr' => sprintf(
-                'https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s',
+                'https://img.vietqr.io/image/%s-%s-%s.png?amount=%d&addInfo=%s&accountName=%s',
                 rawurlencode((string)Settings::get('bank_bin')),
-                rawurlencode((string)Settings::get('bank_account')),
+                rawurlencode(preg_replace('/\s+/', '', (string)Settings::get('bank_account'))),
+                in_array(Settings::get('qr_template'), Qr::TEMPLATES, true) ? Settings::get('qr_template') : 'compact2',
                 $amount,
                 rawurlencode($memo),
-                rawurlencode((string)Settings::get('bank_owner'))
+                rawurlencode(Qr::plain((string)Settings::get('bank_owner')))
             ),
         ];
     }
