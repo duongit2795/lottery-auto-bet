@@ -338,6 +338,7 @@ final class DB
             'CREATE INDEX idx_jobs_batch ON sms_jobs(batch)',
             'CREATE INDEX idx_upk_user ON user_packages(user_id)',
             'CREATE INDEX idx_sends_order ON sms_sends(order_id)',
+            'CREATE INDEX idx_sends_time ON sms_sends(created_at)',
         ];
         // Nâng cấp CSDL cũ: thêm cột mới nếu chưa có
         $columns = [

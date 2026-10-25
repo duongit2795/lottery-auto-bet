@@ -43,7 +43,7 @@ require_once APP_ROOT . '/src/Scheduler.php';
 DB::init($GLOBALS['config']);
 
 // Tự nâng cấp CSDL khi có phiên bản mới
-const DB_VERSION = '10';
+const DB_VERSION = '11';
 if (Settings::get('db_version') !== DB_VERSION) {
     $oldVersion = (int)Settings::get('db_version');
     DB::migrate();
